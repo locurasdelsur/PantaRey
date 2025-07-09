@@ -2,18 +2,18 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, EyeOff, User, Mail, Lock, Guitar, Cloud } from "lucide-react"
+import { Eye, EyeOff, User, Mail, Lock, Guitar, Cloud, RefreshCw, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { driveDataManager } from "@/lib/drive-data-manager"
+import { driveStorage } from "@/lib/google-drive-storage"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -27,6 +27,9 @@ export default function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(true)
+  const [initStatus, setInitStatus] = useState("Conectando con Google Drive...")
+  const [showRetry, setShowRetry] = useState(false)
   const router = useRouter()
 
   const instruments = [
@@ -37,6 +40,52 @@ export default function RegisterPage() {
     { value: "voz", label: "Voz" },
     { value: "otro", label: "Otro" },
   ]
+
+  // Inicializar Google Drive
+  useEffect(() => {
+    initializeSystem()
+  }, [])
+
+  const initializeSystem = async () => {
+    try {
+      setIsInitializing(true)
+      setShowRetry(false)
+      setError("")
+      setInitStatus("Conectando con Google Drive...")
+
+      await driveStorage.initialize()
+      setInitStatus("Verificando permisos...")
+
+      if (!driveStorage.isConnected()) {
+        throw new Error("No se pudo establecer conexión con Google Drive")
+      }
+
+      setInitStatus("¡Sistema listo!")
+      setTimeout(() => setIsInitializing(false), 1000)
+    } catch (err) {
+      console.error("Error inicializando sistema:", err)
+
+      const raw = typeof err === "string" ? err : ((err as Error)?.message ?? String(err))
+      let errorMessage = "Error conectando con Google Drive"
+
+      if (raw.includes("Faltan credenciales")) {
+        errorMessage = "Configuración incompleta. Verifica las variables de entorno."
+      } else if (raw.includes("autorizar")) {
+        errorMessage = "Necesitas autorizar el acceso a Google Drive para continuar."
+      } else if (raw.includes("denegado")) {
+        errorMessage = "Acceso denegado. La aplicación necesita permisos de Google Drive."
+      }
+
+      setError(errorMessage)
+      setShowRetry(true)
+      setIsInitializing(false)
+    }
+  }
+
+  const handleRetry = async () => {
+    await driveStorage.reconnect()
+    await initializeSystem()
+  }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,11 +105,16 @@ export default function RegisterPage() {
     }
 
     try {
-      // Cargar usuarios existentes desde Google Drive
-      const users = await driveDataManager.getUsers()
+      // Verificar que Google Drive esté conectado
+      if (!driveStorage.isConnected()) {
+        throw new Error("Google Drive no está conectado. Intenta reconectar.")
+      }
+
+      // Cargar usuarios existentes
+      const users = (await driveStorage.loadData("users.json")) || []
 
       // Verificar si el email ya existe
-      if (users.find((u) => u.email === formData.email)) {
+      if (users.find((u: any) => u.email === formData.email)) {
         setError("Ya existe un usuario con este email")
         setIsLoading(false)
         return
@@ -76,19 +130,41 @@ export default function RegisterPage() {
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=f59e0b&color=fff`,
       }
 
-      // Agregar usuario a Google Drive
-      await driveDataManager.addUser(newUser)
+      // Guardar usuario en Google Drive
+      const updatedUsers = [...users, newUser]
+      await driveStorage.saveData("users.json", updatedUsers)
 
       // Guardar usuario actual
       localStorage.setItem("currentUser", JSON.stringify(newUser))
 
       router.push("/")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error en registro:", error)
-      setError("Error al crear la cuenta. Verifica tu conexión a Google Drive.")
+      setError(error.message || "Error al crear la cuenta")
     }
 
     setIsLoading(false)
+  }
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50 flex items-center justify-center p-4">
+        <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-xl max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
+            </div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">Inicializando Sistema</h3>
+            <p className="text-slate-600 text-sm">{initStatus}</p>
+            <div className="flex items-center justify-center gap-2 mt-4 text-blue-600">
+              <Cloud className="h-4 w-4" />
+              <span className="text-xs">Google Drive</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -114,8 +190,22 @@ export default function RegisterPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Error de conexión con botón de reintento */}
+            {showRetry && (
+              <Alert className="border-red-200 bg-red-50 mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-red-600">
+                  <div className="mb-2">{error}</div>
+                  <Button onClick={handleRetry} size="sm" className="bg-red-600 hover:bg-red-700 text-white">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reintentar conexión
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <form onSubmit={handleRegister} className="space-y-4">
-              {error && (
+              {error && !showRetry && (
                 <Alert className="border-red-200 bg-red-50">
                   <AlertDescription className="text-red-600">{error}</AlertDescription>
                 </Alert>
@@ -135,6 +225,7 @@ export default function RegisterPage() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="pl-10 bg-slate-50 border-slate-200"
                     required
+                    disabled={showRetry}
                   />
                 </div>
               </div>
@@ -153,6 +244,7 @@ export default function RegisterPage() {
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="pl-10 bg-slate-50 border-slate-200"
                     required
+                    disabled={showRetry}
                   />
                 </div>
               </div>
@@ -166,6 +258,7 @@ export default function RegisterPage() {
                   <Select
                     value={formData.instrument}
                     onValueChange={(value) => setFormData({ ...formData, instrument: value })}
+                    disabled={showRetry}
                   >
                     <SelectTrigger className="pl-10 bg-slate-50 border-slate-200">
                       <SelectValue placeholder="Selecciona tu instrumento" />
@@ -195,11 +288,13 @@ export default function RegisterPage() {
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="pl-10 pr-10 bg-slate-50 border-slate-200"
                     required
+                    disabled={showRetry}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    disabled={showRetry}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -220,11 +315,13 @@ export default function RegisterPage() {
                     onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                     className="pl-10 pr-10 bg-slate-50 border-slate-200"
                     required
+                    disabled={showRetry}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    disabled={showRetry}
                   >
                     {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -234,7 +331,7 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
-                disabled={isLoading}
+                disabled={isLoading || showRetry}
               >
                 {isLoading ? (
                   <div className="flex items-center gap-2">
@@ -266,7 +363,7 @@ export default function RegisterPage() {
               </div>
               <p className="text-xs text-blue-700">
                 Tu cuenta y todos los datos se guardarán automáticamente en Google Drive y serán accesibles para todos
-                los miembros.
+                los miembros de la banda.
               </p>
             </div>
           </CardContent>

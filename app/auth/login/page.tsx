@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Mail, Lock, Cloud } from "lucide-react"
+import { Eye, EyeOff, Mail, Lock, Cloud, RefreshCw, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -32,69 +32,57 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const [initStatus, setInitStatus] = useState("Conectando con Google Drive...")
+  const [showRetry, setShowRetry] = useState(false)
   const router = useRouter()
 
-  // Inicializar Google Drive y usuarios demo
+  // Inicializar Google Drive
   useEffect(() => {
-    const initializeSystem = async () => {
-      try {
-        setIsInitializing(true)
-        setInitStatus("Conectando con Google Drive...")
-
-        // Inicializar Google Drive
-        await driveStorage.initialize()
-        setInitStatus("Cargando usuarios...")
-
-        // Cargar o crear usuarios demo
-        let users = await driveStorage.loadData("users.json")
-
-        if (!users || users.length === 0) {
-          setInitStatus("Creando usuarios demo...")
-          users = [
-            {
-              id: 1,
-              name: "Cholo",
-              email: "cholo@pantarei.com",
-              password: "123456",
-              instrument: "bajo",
-              joinDate: "2024-01-01",
-              avatar: "https://ui-avatars.com/api/?name=Cholo&background=f59e0b&color=fff",
-            },
-            {
-              id: 2,
-              name: "Fernando",
-              email: "fernando@pantarei.com",
-              password: "123456",
-              instrument: "guitarra",
-              joinDate: "2024-01-01",
-              avatar: "https://ui-avatars.com/api/?name=Fernando&background=f59e0b&color=fff",
-            },
-            {
-              id: 3,
-              name: "Emanuel",
-              email: "emanuel@pantarei.com",
-              password: "123456",
-              instrument: "guitarra",
-              joinDate: "2024-01-01",
-              avatar: "https://ui-avatars.com/api/?name=Emanuel&background=f59e0b&color=fff",
-            },
-          ]
-
-          await driveStorage.saveData("users.json", users)
-          setInitStatus("Sistema inicializado correctamente")
-        }
-
-        setInitStatus("¡Listo para usar!")
-        setTimeout(() => setIsInitializing(false), 1000)
-      } catch (error) {
-        console.error("Error inicializando sistema:", error)
-        setError("Error conectando con Google Drive. Verifica tu conexión y permisos.")
-        setIsInitializing(false)
-      }
-    }
-
     initializeSystem()
   }, [])
+
+  const initializeSystem = async () => {
+    try {
+      setIsInitializing(true)
+      setShowRetry(false)
+      setError("")
+      setInitStatus("Conectando con Google Drive...")
+
+      // Inicializar Google Drive
+      await driveStorage.initialize()
+      setInitStatus("Verificando permisos...")
+
+      // Verificar conexión
+      if (!driveStorage.isConnected()) {
+        throw new Error("No se pudo establecer conexión con Google Drive")
+      }
+
+      setInitStatus("¡Sistema listo!")
+      setTimeout(() => setIsInitializing(false), 1000)
+    } catch (err) {
+      console.error("Error inicializando sistema:", err)
+
+      // Convierte siempre a string para evitar TypeErrors
+      const raw = typeof err === "string" ? err : ((err as Error)?.message ?? String(err))
+      let errorMessage = "Error conectando con Google Drive"
+
+      if (raw.includes("Faltan credenciales")) {
+        errorMessage = "Configuración incompleta. Verifica las variables de entorno."
+      } else if (raw.includes("autorizar")) {
+        errorMessage = "Necesitas autorizar el acceso a Google Drive para continuar."
+      } else if (raw.includes("denegado")) {
+        errorMessage = "Acceso denegado. La aplicación necesita permisos de Google Drive."
+      }
+
+      setError(errorMessage)
+      setShowRetry(true)
+      setIsInitializing(false)
+    }
+  }
+
+  const handleRetry = async () => {
+    await driveStorage.reconnect()
+    await initializeSystem()
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -102,8 +90,18 @@ export default function LoginPage() {
     setError("")
 
     try {
+      // Verificar que Google Drive esté conectado
+      if (!driveStorage.isConnected()) {
+        throw new Error("Google Drive no está conectado. Intenta reconectar.")
+      }
+
       const users = await driveStorage.loadData("users.json")
-      const user = users?.find((u: User) => u.email === email && u.password === password)
+
+      if (!users || users.length === 0) {
+        throw new Error("No hay usuarios registrados. Regístrate primero.")
+      }
+
+      const user = users.find((u: User) => u.email === email && u.password === password)
 
       if (user) {
         localStorage.setItem("currentUser", JSON.stringify(user))
@@ -111,9 +109,9 @@ export default function LoginPage() {
       } else {
         setError("Email o contraseña incorrectos")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error en login:", error)
-      setError("Error al iniciar sesión. Verifica tu conexión a Google Drive.")
+      setError(error.message || "Error al iniciar sesión")
     }
 
     setIsLoading(false)
@@ -163,8 +161,22 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Error de conexión con botón de reintento */}
+            {showRetry && (
+              <Alert className="border-red-200 bg-red-50 mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-red-600">
+                  <div className="mb-2">{error}</div>
+                  <Button onClick={handleRetry} size="sm" className="bg-red-600 hover:bg-red-700 text-white">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reintentar conexión
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <form onSubmit={handleLogin} className="space-y-4">
-              {error && (
+              {error && !showRetry && (
                 <Alert className="border-red-200 bg-red-50">
                   <AlertDescription className="text-red-600">{error}</AlertDescription>
                 </Alert>
@@ -184,6 +196,7 @@ export default function LoginPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 bg-slate-50 border-slate-200"
                     required
+                    disabled={showRetry}
                   />
                 </div>
               </div>
@@ -202,11 +215,13 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10 pr-10 bg-slate-50 border-slate-200"
                     required
+                    disabled={showRetry}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    disabled={showRetry}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -216,7 +231,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white"
-                disabled={isLoading}
+                disabled={isLoading || showRetry}
               >
                 {isLoading ? (
                   <div className="flex items-center gap-2">
@@ -241,19 +256,15 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* Información de credenciales demo */}
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
+            {/* Información sobre Google Drive */}
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
                 <Cloud className="h-4 w-4 text-blue-600" />
-                <p className="text-sm text-blue-800 font-medium">Credenciales de prueba:</p>
+                <span className="text-xs font-medium text-blue-800">Almacenamiento en Google Drive</span>
               </div>
-              <div className="text-xs text-blue-700 space-y-1">
-                <p>• cholo@pantarei.com / 123456</p>
-                <p>• fernando@pantarei.com / 123456</p>
-                <p>• emanuel@pantarei.com / 123456</p>
-              </div>
-              <p className="text-xs text-blue-600 mt-2">
-                Todos los datos se sincronizan automáticamente con Google Drive
+              <p className="text-xs text-blue-700">
+                Todos los datos se guardan automáticamente en tu Google Drive y son accesibles para todos los miembros
+                de la banda.
               </p>
             </div>
           </CardContent>
