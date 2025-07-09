@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -77,6 +77,26 @@ interface Song {
 
 export default function SongsManager() {
   const [songs, setSongs] = useState<Song[]>([])
+
+  // Cargar canciones al inicializar
+  useEffect(() => {
+    const savedSongs = localStorage.getItem("bandSongs")
+    if (savedSongs) {
+      try {
+        const parsedSongs = JSON.parse(savedSongs)
+        setSongs(parsedSongs)
+      } catch (error) {
+        console.error("Error loading songs:", error)
+      }
+    }
+  }, [])
+
+  // Guardar canciones automáticamente
+  useEffect(() => {
+    if (songs.length > 0) {
+      localStorage.setItem("bandSongs", JSON.stringify(songs))
+    }
+  }, [songs])
 
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("all")
@@ -210,7 +230,14 @@ export default function SongsManager() {
 
   const deleteSong = (songId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta canción?")) {
-      setSongs(songs.filter((song) => song.id !== songId))
+      const updatedSongs = songs.filter((song) => song.id !== songId)
+      setSongs(updatedSongs)
+      // Actualizar localStorage inmediatamente
+      if (updatedSongs.length === 0) {
+        localStorage.removeItem("bandSongs")
+      } else {
+        localStorage.setItem("bandSongs", JSON.stringify(updatedSongs))
+      }
     }
   }
 

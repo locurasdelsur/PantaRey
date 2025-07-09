@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +30,26 @@ interface Channel {
 export default function ChatPage() {
   // Cambiar el estado inicial para que esté vacío
   const [messages, setMessages] = useState<Message[]>([])
+
+  // Cargar mensajes al inicializar
+  useEffect(() => {
+    const savedMessages = localStorage.getItem("bandMessages")
+    if (savedMessages) {
+      try {
+        const parsedMessages = JSON.parse(savedMessages)
+        setMessages(parsedMessages)
+      } catch (error) {
+        console.error("Error loading messages:", error)
+      }
+    }
+  }, [])
+
+  // Guardar mensajes automáticamente
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem("bandMessages", JSON.stringify(messages))
+    }
+  }, [messages])
 
   const [channels] = useState<Channel[]>([
     {
@@ -79,12 +99,14 @@ export default function ChatPage() {
     if (newMessage.trim()) {
       const message: Message = {
         id: Date.now(),
-        author: "Tú", // En una app real, esto vendría del usuario logueado
+        author: "Tú",
         content: newMessage,
         timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
         channel: activeChannel,
       }
-      setMessages([...messages, message])
+      const updatedMessages = [...messages, message]
+      setMessages(updatedMessages)
+      localStorage.setItem("bandMessages", JSON.stringify(updatedMessages))
       setNewMessage("")
     }
   }
@@ -99,7 +121,14 @@ export default function ChatPage() {
   // Agregar función para borrar mensaje
   const deleteMessage = (messageId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar este mensaje?")) {
-      setMessages(messages.filter((message) => message.id !== messageId))
+      const updatedMessages = messages.filter((message) => message.id !== messageId)
+      setMessages(updatedMessages)
+      // Actualizar localStorage inmediatamente
+      if (updatedMessages.length === 0) {
+        localStorage.removeItem("bandMessages")
+      } else {
+        localStorage.setItem("bandMessages", JSON.stringify(updatedMessages))
+      }
     }
   }
 

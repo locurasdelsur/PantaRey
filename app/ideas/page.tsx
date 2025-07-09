@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,6 +42,26 @@ interface Comment {
 
 export default function IdeasPage() {
   const [ideas, setIdeas] = useState<Idea[]>([])
+
+  // Cargar ideas al inicializar
+  useEffect(() => {
+    const savedIdeas = localStorage.getItem("bandIdeas")
+    if (savedIdeas) {
+      try {
+        const parsedIdeas = JSON.parse(savedIdeas)
+        setIdeas(parsedIdeas)
+      } catch (error) {
+        console.error("Error loading ideas:", error)
+      }
+    }
+  }, [])
+
+  // Guardar ideas automáticamente
+  useEffect(() => {
+    if (ideas.length > 0) {
+      localStorage.setItem("bandIdeas", JSON.stringify(ideas))
+    }
+  }, [ideas])
 
   const [newIdea, setNewIdea] = useState({
     title: "",
@@ -136,12 +156,21 @@ export default function IdeasPage() {
   }
 
   const likeIdea = (ideaId: number) => {
-    setIdeas(ideas.map((idea) => (idea.id === ideaId ? { ...idea, likes: idea.likes + 1 } : idea)))
+    const updatedIdeas = ideas.map((idea) => (idea.id === ideaId ? { ...idea, likes: idea.likes + 1 } : idea))
+    setIdeas(updatedIdeas)
+    localStorage.setItem("bandIdeas", JSON.stringify(updatedIdeas))
   }
 
   const deleteIdea = (ideaId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta idea?")) {
-      setIdeas(ideas.filter((idea) => idea.id !== ideaId))
+      const updatedIdeas = ideas.filter((idea) => idea.id !== ideaId)
+      setIdeas(updatedIdeas)
+      // Actualizar localStorage inmediatamente
+      if (updatedIdeas.length === 0) {
+        localStorage.removeItem("bandIdeas")
+      } else {
+        localStorage.setItem("bandIdeas", JSON.stringify(updatedIdeas))
+      }
     }
   }
 

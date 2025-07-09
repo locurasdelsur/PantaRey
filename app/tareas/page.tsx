@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +33,26 @@ interface Task {
 export default function TasksPage() {
   // El estado inicial ya está vacío, pero vamos a limpiar los datos demo
   const [tasks, setTasks] = useState<Task[]>([])
+
+  // Cargar tareas al inicializar
+  useEffect(() => {
+    const savedTasks = localStorage.getItem("bandTasks")
+    if (savedTasks) {
+      try {
+        const parsedTasks = JSON.parse(savedTasks)
+        setTasks(parsedTasks)
+      } catch (error) {
+        console.error("Error loading tasks:", error)
+      }
+    }
+  }, [])
+
+  // Guardar tareas automáticamente
+  useEffect(() => {
+    if (tasks.length > 0) {
+      localStorage.setItem("bandTasks", JSON.stringify(tasks))
+    }
+  }, [tasks])
 
   const [newTask, setNewTask] = useState({
     title: "",
@@ -102,12 +122,21 @@ export default function TasksPage() {
   }
 
   const moveTask = (taskId: number, newStatus: "todo" | "doing" | "done") => {
-    setTasks(tasks.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task)))
+    const updatedTasks = tasks.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task))
+    setTasks(updatedTasks)
+    localStorage.setItem("bandTasks", JSON.stringify(updatedTasks))
   }
 
   // La función deleteTask ya existe, solo necesitamos asegurar que funcione correctamente
   const deleteTask = (taskId: number) => {
-    setTasks(tasks.filter((task) => task.id !== taskId))
+    const updatedTasks = tasks.filter((task) => task.id !== taskId)
+    setTasks(updatedTasks)
+    // Actualizar localStorage inmediatamente
+    if (updatedTasks.length === 0) {
+      localStorage.removeItem("bandTasks")
+    } else {
+      localStorage.setItem("bandTasks", JSON.stringify(updatedTasks))
+    }
   }
 
   const todoTasks = tasks.filter((task) => task.status === "todo")

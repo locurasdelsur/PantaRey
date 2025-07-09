@@ -32,16 +32,88 @@ export default function Dashboard() {
   }, [])
 
   // Cambiar los datos iniciales para que estén vacíos
-  const [recentActivity] = useState([])
-
-  const [upcomingEvents] = useState([])
-
-  const [songStats] = useState({
+  const [recentActivity, setRecentActivity] = useState([])
+  const [upcomingEvents, setUpcomingEvents] = useState([])
+  const [songStats, setSongStats] = useState({
     total: 0,
     ready: 0,
     practicing: 0,
     developing: 0,
   })
+
+  // Cargar estadísticas reales al inicializar
+  useEffect(() => {
+    // Cargar canciones
+    const savedSongs = localStorage.getItem("bandSongs")
+    if (savedSongs) {
+      try {
+        const songs = JSON.parse(savedSongs)
+        const stats = {
+          total: songs.length,
+          ready: songs.filter((s) => s.status === "ready").length,
+          practicing: songs.filter((s) => s.status === "practicing").length,
+          developing: songs.filter((s) => s.status === "developing").length,
+        }
+        setSongStats(stats)
+      } catch (error) {
+        console.error("Error loading song stats:", error)
+      }
+    }
+
+    // Cargar eventos próximos
+    const savedEvents = localStorage.getItem("bandEvents")
+    if (savedEvents) {
+      try {
+        const events = JSON.parse(savedEvents)
+        const upcoming = events
+          .filter((event) => new Date(event.date) >= new Date())
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          .slice(0, 5)
+        setUpcomingEvents(upcoming)
+      } catch (error) {
+        console.error("Error loading events:", error)
+      }
+    }
+
+    // Cargar actividad reciente (últimas acciones)
+    const activities = []
+
+    // Agregar últimas canciones
+    if (savedSongs) {
+      try {
+        const songs = JSON.parse(savedSongs)
+        songs.slice(-3).forEach((song) => {
+          activities.push({
+            icon: Music,
+            title: `Nueva canción: ${song.title}`,
+            time: "reciente",
+            color: "text-blue-600",
+          })
+        })
+      } catch (error) {}
+    }
+
+    // Agregar últimas tareas
+    const savedTasks = localStorage.getItem("bandTasks")
+    if (savedTasks) {
+      try {
+        const tasks = JSON.parse(savedTasks)
+        tasks
+          .filter((t) => t.status === "done")
+          .slice(-2)
+          .forEach((task) => {
+            activities.push({
+              icon: CheckSquare,
+              title: `Tarea completada: ${task.title}`,
+              time: "reciente",
+              color: "text-green-600",
+            })
+          })
+      } catch (error) {}
+    }
+
+    setRecentActivity(activities.slice(0, 5))
+  }, [])
 
   return (
     <AuthGuard>

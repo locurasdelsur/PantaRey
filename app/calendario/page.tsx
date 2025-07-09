@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -15,7 +15,19 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, Clock, MapPin, Users, Plus, Bell, Music2, Mic, Trash2 } from "lucide-react"
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Users,
+  Plus,
+  Bell,
+  Music2,
+  Mic,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -33,6 +45,26 @@ interface Event {
 
 export default function CalendarPage() {
   const [events, setEvents] = useState<Event[]>([])
+
+  // Cargar eventos al inicializar
+  useEffect(() => {
+    const savedEvents = localStorage.getItem("bandEvents")
+    if (savedEvents) {
+      try {
+        const parsedEvents = JSON.parse(savedEvents)
+        setEvents(parsedEvents)
+      } catch (error) {
+        console.error("Error loading events:", error)
+      }
+    }
+  }, [])
+
+  // Guardar eventos automáticamente
+  useEffect(() => {
+    if (events.length > 0) {
+      localStorage.setItem("bandEvents", JSON.stringify(events))
+    }
+  }, [events])
 
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -96,9 +128,11 @@ export default function CalendarPage() {
     const event: Event = {
       id: Date.now(),
       ...newEvent,
-      attendees: ["Cholo", "Fernando", "Emanuel"], // Por defecto todos los miembros
+      attendees: ["Cholo", "Fernando", "Emanuel"],
     }
-    setEvents([...events, event])
+    const updatedEvents = [...events, event]
+    setEvents(updatedEvents)
+    localStorage.setItem("bandEvents", JSON.stringify(updatedEvents))
     setNewEvent({
       title: "",
       type: "rehearsal",
@@ -119,7 +153,14 @@ export default function CalendarPage() {
 
   const deleteEvent = (eventId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar este evento?")) {
-      setEvents(events.filter((event) => event.id !== eventId))
+      const updatedEvents = events.filter((event) => event.id !== eventId)
+      setEvents(updatedEvents)
+      // Actualizar localStorage inmediatamente
+      if (updatedEvents.length === 0) {
+        localStorage.removeItem("bandEvents")
+      } else {
+        localStorage.setItem("bandEvents", JSON.stringify(updatedEvents))
+      }
     }
   }
 
@@ -327,36 +368,126 @@ export default function CalendarPage() {
             <h2 className="text-2xl font-bold text-slate-800 mb-4">Vista de Calendario</h2>
             <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
               <CardHeader>
-                <CardTitle className="text-slate-800">Enero 2025</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-slate-800 flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-emerald-600" />
+                    Enero 2025
+                  </CardTitle>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-transparent">
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-transparent">
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-7 gap-1 mb-4">
+                {/* Días de la semana */}
+                <div className="grid grid-cols-7 gap-1 mb-2">
                   {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((day) => (
-                    <div key={day} className="text-center text-sm font-medium text-slate-600 p-2">
+                    <div
+                      key={day}
+                      className="text-center text-sm font-semibold text-slate-600 p-3 bg-slate-50 rounded-lg"
+                    >
                       {day}
                     </div>
                   ))}
                 </div>
+
+                {/* Días del mes */}
                 <div className="grid grid-cols-7 gap-1">
+                  {/* Días vacíos del mes anterior */}
+                  {Array.from({ length: 3 }, (_, i) => (
+                    <div key={`empty-${i}`} className="h-16 p-2 text-center text-slate-300 bg-slate-50/50 rounded-lg">
+                      <span className="text-sm">{29 + i}</span>
+                    </div>
+                  ))}
+
+                  {/* Días del mes actual */}
                   {Array.from({ length: 31 }, (_, i) => {
                     const day = i + 1
                     const dateStr = `2025-01-${day.toString().padStart(2, "0")}`
                     const hasEvent = events.some((event) => event.date === dateStr)
                     const isToday = dateStr === new Date().toISOString().split("T")[0]
+                    const dayEvents = events.filter((event) => event.date === dateStr)
 
                     return (
                       <div
                         key={day}
                         className={`
-                          text-center p-2 text-sm cursor-pointer rounded transition-colors
-                          ${isToday ? "bg-purple-600 text-white" : "text-slate-600 hover:bg-slate-200"}
-                          ${hasEvent ? "ring-2 ring-blue-400" : ""}
+                          h-16 p-2 text-center cursor-pointer rounded-lg transition-all duration-200 border-2
+                          ${
+                            isToday
+                              ? "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-emerald-400 shadow-lg"
+                              : hasEvent
+                                ? "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 hover:from-blue-100 hover:to-blue-200"
+                                : "bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                          }
                         `}
                       >
-                        {day}
+                        <div className={`text-sm font-medium ${isToday ? "text-white" : "text-slate-700"}`}>{day}</div>
+                        {hasEvent && (
+                          <div className="mt-1 space-y-0.5">
+                            {dayEvents.slice(0, 2).map((event, idx) => (
+                              <div
+                                key={idx}
+                                className={`
+                                  w-full h-1.5 rounded-full
+                                  ${
+                                    event.type === "rehearsal"
+                                      ? "bg-blue-400"
+                                      : event.type === "gig"
+                                        ? "bg-green-400"
+                                        : event.type === "recording"
+                                          ? "bg-purple-400"
+                                          : "bg-orange-400"
+                                  }
+                                `}
+                              />
+                            ))}
+                            {dayEvents.length > 2 && (
+                              <div className="text-xs text-slate-500 font-medium">+{dayEvents.length - 2}</div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
+
+                  {/* Días del siguiente mes */}
+                  {Array.from({ length: 7 }, (_, i) => (
+                    <div key={`next-${i}`} className="h-16 p-2 text-center text-slate-300 bg-slate-50/50 rounded-lg">
+                      <span className="text-sm">{i + 1}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Leyenda */}
+                <div className="mt-6 pt-4 border-t border-slate-200">
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
+                      <span className="text-slate-600">Ensayos</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                      <span className="text-slate-600">Shows</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-purple-400 rounded-full"></div>
+                      <span className="text-slate-600">Grabaciones</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-orange-400 rounded-full"></div>
+                      <span className="text-slate-600">Reuniones</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+                      <span className="text-slate-600">Hoy</span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

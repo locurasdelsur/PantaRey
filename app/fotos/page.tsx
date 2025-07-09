@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +29,7 @@ interface Photo {
   location: string
   photographer: string
   tags: string[]
+  base64Data?: string // Agregar campo para datos base64
 }
 
 interface PhotoSession {
@@ -40,16 +41,9 @@ interface PhotoSession {
 }
 
 export default function PhotosPage() {
-  // Cambiar el estado inicial para que esté vacío
   const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([])
-
-  // Reemplazar esta línea:
-  //const [selectedMonth, setSelectedMonth] = useState("2025-01")
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
-
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
-
-  // Agregar estado para el diálogo de subir fotos
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
   const [newPhotoSession, setNewPhotoSession] = useState({
     title: "",
@@ -57,6 +51,36 @@ export default function PhotosPage() {
     location: "",
     photos: [] as File[],
   })
+
+  // Cargar datos al inicializar el componente
+  useEffect(() => {
+    const savedSessions = localStorage.getItem("bandPhotoSessions")
+    if (savedSessions) {
+      try {
+        const parsedSessions = JSON.parse(savedSessions)
+        setPhotoSessions(parsedSessions)
+      } catch (error) {
+        console.error("Error loading photo sessions:", error)
+      }
+    }
+  }, [])
+
+  // Guardar datos cada vez que cambien las sesiones
+  useEffect(() => {
+    if (photoSessions.length > 0) {
+      localStorage.setItem("bandPhotoSessions", JSON.stringify(photoSessions))
+    }
+  }, [photoSessions])
+
+  // Función para convertir archivo a base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = (error) => reject(error)
+    })
+  }
 
   // Agregar función para manejar la subida de archivos
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,55 +91,82 @@ export default function PhotosPage() {
     }
   }
 
-  // Agregar función para crear nueva sesión de fotos
-  const handleCreatePhotoSession = () => {
+  // Modificar función para crear nueva sesión de fotos
+  const handleCreatePhotoSession = async () => {
     if (newPhotoSession.title && newPhotoSession.date && newPhotoSession.photos.length > 0) {
-      const newSession: PhotoSession = {
-        id: Date.now(),
-        title: newPhotoSession.title,
-        date: newPhotoSession.date,
-        location: newPhotoSession.location,
-        photos: newPhotoSession.photos.map((file, index) => ({
-          id: Date.now() + index,
-          url: URL.createObjectURL(file), // En producción esto sería una URL real
-          title: file.name.replace(/\.[^/.]+$/, ""), // Nombre sin extensión
+      try {
+        // Convertir todas las fotos a base64
+        const photosWithBase64 = await Promise.all(
+          newPhotoSession.photos.map(async (file, index) => {
+            const base64Data = await fileToBase64(file)
+            return {
+              id: Date.now() + index,
+              url: base64Data, // Usar base64 como URL
+              title: file.name.replace(/\.[^/.]+$/, ""),
+              date: newPhotoSession.date,
+              location: newPhotoSession.location,
+              photographer: "Usuario",
+              tags: ["nueva-sesion"],
+              base64Data: base64Data,
+            }
+          }),
+        )
+
+        const newSession: PhotoSession = {
+          id: Date.now(),
+          title: newPhotoSession.title,
           date: newPhotoSession.date,
           location: newPhotoSession.location,
-          photographer: "Usuario", // En una app real vendría del usuario logueado
-          tags: ["nueva-sesion"],
-        })),
-      }
+          photos: photosWithBase64,
+        }
 
-      setPhotoSessions([...photoSessions, newSession])
-      setNewPhotoSession({
-        title: "",
-        date: "",
-        location: "",
-        photos: [],
-      })
-      setIsUploadDialogOpen(false)
+        setPhotoSessions([...photoSessions, newSession])
+        setNewPhotoSession({
+          title: "",
+          date: "",
+          location: "",
+          photos: [],
+        })
+        setIsUploadDialogOpen(false)
+      } catch (error) {
+        console.error("Error processing photos:", error)
+        alert("Error al procesar las fotos. Por favor, intenta de nuevo.")
+      }
     }
   }
 
   // Agregar función para borrar sesión de fotos
   const deletePhotoSession = (sessionId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta sesión de fotos?")) {
-      setPhotoSessions(photoSessions.filter((session) => session.id !== sessionId))
+      const updatedSessions = photoSessions.filter((session) => session.id !== sessionId)
+      setPhotoSessions(updatedSessions)
+      // Actualizar localStorage inmediatamente
+      if (updatedSessions.length === 0) {
+        localStorage.removeItem("bandPhotoSessions")
+      } else {
+        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
+      }
     }
   }
 
   // Agregar función para borrar foto individual
   const deletePhoto = (sessionId: number, photoId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta foto?")) {
-      setPhotoSessions(
-        photoSessions
-          .map((session) =>
-            session.id === sessionId
-              ? { ...session, photos: session.photos.filter((photo) => photo.id !== photoId) }
-              : session,
-          )
-          .filter((session) => session.photos.length > 0),
-      ) // Eliminar sesión si no quedan fotos
+      const updatedSessions = photoSessions
+        .map((session) =>
+          session.id === sessionId
+            ? { ...session, photos: session.photos.filter((photo) => photo.id !== photoId) }
+            : session,
+        )
+        .filter((session) => session.photos.length > 0) // Eliminar sesión si no quedan fotos
+
+      setPhotoSessions(updatedSessions)
+      // Actualizar localStorage inmediatamente
+      if (updatedSessions.length === 0) {
+        localStorage.removeItem("bandPhotoSessions")
+      } else {
+        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
+      }
     }
   }
 
@@ -191,23 +242,39 @@ export default function PhotosPage() {
     setSelectedMonth(months[newIndex].value)
   }
 
-  // También agregar una función para agregar fotos a sesiones existentes
-  const addPhotosToSession = (sessionId: number, files: File[]) => {
+  // Modificar función para agregar fotos a sesiones existentes
+  const addPhotosToSession = async (sessionId: number, files: File[]) => {
     const session = photoSessions.find((s) => s.id === sessionId)
     if (session) {
-      const newPhotos: Photo[] = files.map((file, index) => ({
-        id: Date.now() + index,
-        url: URL.createObjectURL(file),
-        title: file.name.replace(/\.[^/.]+$/, ""),
-        date: session.date,
-        location: session.location,
-        photographer: "Usuario",
-        tags: ["agregada-posteriormente"],
-      }))
+      try {
+        // Convertir nuevas fotos a base64
+        const newPhotosWithBase64 = await Promise.all(
+          files.map(async (file, index) => {
+            const base64Data = await fileToBase64(file)
+            return {
+              id: Date.now() + index,
+              url: base64Data,
+              title: file.name.replace(/\.[^/.]+$/, ""),
+              date: session.date,
+              location: session.location,
+              photographer: "Usuario",
+              tags: ["agregada-posteriormente"],
+              base64Data: base64Data,
+            }
+          }),
+        )
 
-      setPhotoSessions(
-        photoSessions.map((s) => (s.id === sessionId ? { ...s, photos: [...s.photos, ...newPhotos] } : s)),
-      )
+        const updatedSessions = photoSessions.map((s) =>
+          s.id === sessionId ? { ...s, photos: [...s.photos, ...newPhotosWithBase64] } : s,
+        )
+
+        setPhotoSessions(updatedSessions)
+        // Guardar inmediatamente en localStorage
+        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
+      } catch (error) {
+        console.error("Error adding photos:", error)
+        alert("Error al agregar las fotos. Por favor, intenta de nuevo.")
+      }
     }
   }
 
@@ -354,7 +421,7 @@ export default function PhotosPage() {
                 </Button>
 
                 <div className="flex items-center gap-4">
-                  <Calendar className="h-5 w-5 text-slate-600" />
+                  <Camera className="h-5 w-5 text-slate-600" />
                   <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                     <SelectTrigger className="w-[200px] bg-slate-50 border-slate-200">
                       <SelectValue placeholder="Seleccionar mes" />
