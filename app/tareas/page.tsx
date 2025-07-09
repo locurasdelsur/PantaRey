@@ -31,57 +31,8 @@ interface Task {
 }
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: 1,
-      title: "Comprar cuerdas nuevas",
-      description: "Cuerdas para guitarra eléctrica y bajo",
-      status: "done",
-      priority: "medium",
-      assignee: "Emanuel",
-      dueDate: "2025-01-10",
-      createdAt: "2025-01-05",
-    },
-    {
-      id: 2,
-      title: 'Terminar letra de "Nuevo Amanecer"',
-      description: "Falta completar el segundo verso y el puente",
-      status: "doing",
-      priority: "high",
-      assignee: "Fernando",
-      dueDate: "2025-01-12",
-      createdAt: "2025-01-06",
-    },
-    {
-      id: 3,
-      title: "Reservar estudio para grabación",
-      description: "Contactar Estudio Norte para fechas disponibles en febrero",
-      status: "todo",
-      priority: "high",
-      assignee: "Cholo",
-      dueDate: "2025-01-15",
-      createdAt: "2025-01-07",
-    },
-    {
-      id: 4,
-      title: "Diseñar flyer para próximo show",
-      description: "Crear diseño para el show del Bar El Refugio",
-      status: "todo",
-      priority: "medium",
-      assignee: "Fernando",
-      dueDate: "2025-01-13",
-      createdAt: "2025-01-08",
-    },
-    {
-      id: 5,
-      title: 'Practicar solo de "Bohemian Rhapsody"',
-      description: "Ensayar la parte del solo de guitarra",
-      status: "doing",
-      priority: "medium",
-      assignee: "Emanuel",
-      createdAt: "2025-01-08",
-    },
-  ])
+  // El estado inicial ya está vacío, pero vamos a limpiar los datos demo
+  const [tasks, setTasks] = useState<Task[]>([])
 
   const [newTask, setNewTask] = useState({
     title: "",
@@ -154,6 +105,7 @@ export default function TasksPage() {
     setTasks(tasks.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task)))
   }
 
+  // La función deleteTask ya existe, solo necesitamos asegurar que funcione correctamente
   const deleteTask = (taskId: number) => {
     setTasks(tasks.filter((task) => task.id !== taskId))
   }

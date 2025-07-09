@@ -29,6 +29,7 @@ import {
   ImageIcon,
   Download,
   User,
+  Trash2,
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
@@ -75,131 +76,7 @@ interface Song {
 }
 
 export default function SongsManager() {
-  const [songs, setSongs] = useState<Song[]>([
-    {
-      id: 1,
-      title: "Despertar",
-      status: "ready",
-      type: "original",
-      lyrics: "Cuando el sol se oculta detrás de la montaña...",
-      chords: "Am - F - C - G",
-      audio: "/placeholder-audio.mp3",
-      notes: "Listo para tocar en vivo",
-      lastUpdated: "2025-01-08",
-      comments: [
-        {
-          id: 1,
-          author: "Fernando",
-          content: "Me encanta cómo quedó la nueva versión del puente",
-          timestamp: "2025-01-08 14:30",
-        },
-        {
-          id: 2,
-          author: "Cholo",
-          content: "¿Podríamos probar un tempo un poco más lento?",
-          timestamp: "2025-01-08 15:45",
-        },
-      ],
-      versions: [
-        {
-          id: 1,
-          version: "v1.0",
-          changes: "Versión inicial",
-          author: "Emanuel",
-          date: "2024-12-15",
-          audioUrl: "/despertar-v1.mp3",
-        },
-        {
-          id: 2,
-          version: "v1.1",
-          changes: "Modificado el puente, agregado solo de guitarra",
-          author: "Fernando",
-          date: "2025-01-05",
-        },
-        {
-          id: 3,
-          version: "v1.2",
-          changes: "Ajustado tempo y arreglos finales",
-          author: "Emanuel",
-          date: "2025-01-08",
-          audioUrl: "/despertar-v1-2.mp3",
-        },
-      ],
-      recordings: [
-        {
-          id: 1,
-          name: "Despertar - Versión Acústica",
-          url: "/despertar-acustica.mp3",
-          type: "acustica",
-          uploadDate: "2025-01-07",
-        },
-        {
-          id: 2,
-          name: "Despertar - Versión Eléctrica",
-          url: "/despertar-electrica.mp3",
-          type: "electrica",
-          uploadDate: "2025-01-08",
-        },
-      ],
-      coverImage: "/placeholder.svg?height=200&width=200",
-    },
-    {
-      id: 2,
-      title: "Bohemian Rhapsody",
-      status: "practicing",
-      type: "cover",
-      lyrics: "Is this the real life? Is this just fantasy?...",
-      chords: "Bb - F - Gm - Eb - Bb - F",
-      notes: "Trabajar más la parte del solo",
-      lastUpdated: "2025-01-07",
-      comments: [
-        {
-          id: 1,
-          author: "Cholo",
-          content: "El solo está quedando increíble, Emanuel!",
-          timestamp: "2025-01-07 19:20",
-        },
-      ],
-      versions: [
-        {
-          id: 1,
-          version: "v1.0",
-          changes: "Primera aproximación al cover",
-          author: "Fernando",
-          date: "2025-01-01",
-        },
-      ],
-      recordings: [
-        {
-          id: 1,
-          name: "Bohemian Rhapsody - Demo",
-          url: "/bohemian-demo.mp3",
-          type: "demo",
-          uploadDate: "2025-01-05",
-        },
-      ],
-    },
-    {
-      id: 3,
-      title: "Nuevo Amanecer",
-      status: "developing",
-      type: "original",
-      lyrics: "Borrador: Un nuevo día comienza...",
-      notes: "Falta terminar el estribillo",
-      lastUpdated: "2025-01-06",
-      comments: [],
-      versions: [
-        {
-          id: 1,
-          version: "v0.1",
-          changes: "Borrador inicial con letra parcial",
-          author: "Fernando",
-          date: "2025-01-06",
-        },
-      ],
-      recordings: [],
-    },
-  ])
+  const [songs, setSongs] = useState<Song[]>([])
 
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("all")
@@ -329,6 +206,12 @@ export default function SongsManager() {
   const generatePDF = (song: Song) => {
     // En una implementación real, esto generaría un PDF
     alert(`Generando PDF de "${song.title}"...`)
+  }
+
+  const deleteSong = (songId: number) => {
+    if (confirm("¿Estás seguro de que quieres eliminar esta canción?")) {
+      setSongs(songs.filter((song) => song.id !== songId))
+    }
   }
 
   return (
@@ -481,6 +364,14 @@ export default function SongsManager() {
                     <Badge variant="outline" className="text-slate-600 border-slate-600">
                       {song.type === "original" ? "Original" : "Cover"}
                     </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteSong(song.id)}
+                      className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
                 <CardDescription className="text-slate-500">

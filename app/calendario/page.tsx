@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, Clock, MapPin, Users, Plus, Bell, Music2, Mic } from "lucide-react"
+import { Calendar, Clock, MapPin, Users, Plus, Bell, Music2, Mic, Trash2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -32,52 +32,7 @@ interface Event {
 }
 
 export default function CalendarPage() {
-  const [events, setEvents] = useState<Event[]>([
-    {
-      id: 1,
-      title: "Ensayo General",
-      type: "rehearsal",
-      date: "2025-01-09",
-      time: "19:00",
-      location: "Estudio Central - Sala 3",
-      description: "Repasar repertorio completo para el show del viernes",
-      attendees: ["Cholo", "Fernando", "Emanuel"],
-      reminder: true,
-    },
-    {
-      id: 2,
-      title: "Show - Bar El Refugio",
-      type: "gig",
-      date: "2025-01-15",
-      time: "22:30",
-      location: "Bar El Refugio - Av. Corrientes 1234",
-      description: "Set de 1 hora, 2 sets de 30 min cada uno",
-      attendees: ["Cholo", "Fernando", "Emanuel"],
-      reminder: true,
-    },
-    {
-      id: 3,
-      title: "Grabación EP",
-      type: "recording",
-      date: "2025-01-20",
-      time: "15:00",
-      location: "Estudio Norte",
-      description: "Grabación de 4 temas originales",
-      attendees: ["Emanuel", "Fernando", "Cholo"],
-      reminder: true,
-    },
-    {
-      id: 4,
-      title: "Reunión de Banda",
-      type: "meeting",
-      date: "2025-01-25",
-      time: "18:00",
-      location: "Casa de Juan",
-      description: "Planificar próximos shows y discutir nuevas canciones",
-      attendees: ["Cholo", "Fernando", "Emanuel"],
-      reminder: false,
-    },
-  ])
+  const [events, setEvents] = useState<Event[]>([])
 
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -161,6 +116,12 @@ export default function CalendarPage() {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
   const todayEvents = events.filter((event) => event.date === new Date().toISOString().split("T")[0])
+
+  const deleteEvent = (eventId: number) => {
+    if (confirm("¿Estás seguro de que quieres eliminar este evento?")) {
+      setEvents(events.filter((event) => event.id !== eventId))
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
@@ -313,6 +274,14 @@ export default function CalendarPage() {
                               Recordatorio
                             </Badge>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteEvent(event.id)}
+                            className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
                       <CardDescription className="text-slate-600">

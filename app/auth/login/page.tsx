@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,43 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+
+  // Inicializar usuarios demo solo si no existen
+  useEffect(() => {
+    const existingUsers = localStorage.getItem("bandUsers")
+    if (!existingUsers) {
+      const demoUsers = [
+        {
+          id: 1,
+          name: "Cholo",
+          email: "cholo@pantarei.com",
+          password: "123456",
+          instrument: "bajo",
+          joinDate: "2024-01-01",
+          avatar: "https://ui-avatars.com/api/?name=Cholo&background=f59e0b&color=fff",
+        },
+        {
+          id: 2,
+          name: "Fernando",
+          email: "fernando@pantarei.com",
+          password: "123456",
+          instrument: "guitarra",
+          joinDate: "2024-01-01",
+          avatar: "https://ui-avatars.com/api/?name=Fernando&background=f59e0b&color=fff",
+        },
+        {
+          id: 3,
+          name: "Emanuel",
+          email: "emanuel@pantarei.com",
+          password: "123456",
+          instrument: "guitarra",
+          joinDate: "2024-01-01",
+          avatar: "https://ui-avatars.com/api/?name=Emanuel&background=f59e0b&color=fff",
+        },
+      ]
+      localStorage.setItem("bandUsers", JSON.stringify(demoUsers))
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()

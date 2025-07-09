@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { MessageCircle, Send, Users, Hash } from "lucide-react"
+import { MessageCircle, Send, Users, Hash, Trash2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -28,6 +28,9 @@ interface Channel {
 }
 
 export default function ChatPage() {
+  // Cambiar el estado inicial para que esté vacío
+  const [messages, setMessages] = useState<Message[]>([])
+
   const [channels] = useState<Channel[]>([
     {
       id: "general",
@@ -66,51 +69,6 @@ export default function ChatPage() {
     },
   ])
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      author: "Emanuel",
-      content: '¿Qué les parece si ensayamos "Despertar" una vez más antes del show?',
-      timestamp: "2025-01-08 15:30",
-      channel: "general",
-    },
-    {
-      id: 2,
-      author: "Fernando",
-      content: "Perfecto! Yo también quiero repasar la parte del puente",
-      timestamp: "2025-01-08 15:32",
-      channel: "general",
-    },
-    {
-      id: 3,
-      author: "Cholo",
-      content: "Dale, y aprovechamos para afinar bien los instrumentos",
-      timestamp: "2025-01-08 15:35",
-      channel: "general",
-    },
-    {
-      id: 4,
-      author: "Fernando",
-      content: "Subí el diseño del flyer al drive, échenle un vistazo",
-      timestamp: "2025-01-08 15:40",
-      channel: "general",
-    },
-    {
-      id: 5,
-      author: "Emanuel",
-      content: 'Tengo una idea para el solo de "Bohemian Rhapsody", ¿la escuchamos mañana?',
-      timestamp: "2025-01-08 16:45",
-      channel: "composicion",
-    },
-    {
-      id: 6,
-      author: "Fernando",
-      content: "Sí! Y yo tengo una variación para la letra del segundo verso",
-      timestamp: "2025-01-08 16:47",
-      channel: "composicion",
-    },
-  ])
-
   const [activeChannel, setActiveChannel] = useState("general")
   const [newMessage, setNewMessage] = useState("")
 
@@ -135,6 +93,13 @@ export default function ChatPage() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
+    }
+  }
+
+  // Agregar función para borrar mensaje
+  const deleteMessage = (messageId: number) => {
+    if (confirm("¿Estás seguro de que quieres eliminar este mensaje?")) {
+      setMessages(messages.filter((message) => message.id !== messageId))
     }
   }
 
@@ -232,7 +197,8 @@ export default function ChatPage() {
               <CardContent className="flex-1 overflow-y-auto p-4">
                 <div className="space-y-4">
                   {channelMessages.map((message) => (
-                    <div key={message.id} className="flex gap-3">
+                    // En el JSX, modificar cada mensaje para incluir botón de eliminar:
+                    <div key={message.id} className="flex gap-3 group">
                       <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
                         {message.author[0]}
                       </div>
@@ -240,6 +206,14 @@ export default function ChatPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium text-gray-800">{message.author}</span>
                           <span className="text-xs text-gray-500">{message.timestamp}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteMessage(message.id)}
+                            className="h-4 w-4 p-0 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                         <p className="text-gray-700">{message.content}</p>
                       </div>

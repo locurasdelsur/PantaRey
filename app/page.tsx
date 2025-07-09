@@ -31,30 +31,16 @@ export default function Dashboard() {
     }
   }, [])
 
-  const [recentActivity] = useState([
-    { type: "song", title: 'Nueva versión de "Despertar"', time: "2 horas", icon: Music, color: "text-amber-400" },
-    {
-      type: "rehearsal",
-      title: "Ensayo programado para mañana",
-      time: "1 día",
-      icon: Calendar,
-      color: "text-emerald-400",
-    },
-    { type: "idea", title: "Emanuel subió un riff nuevo", time: "3 horas", icon: Lightbulb, color: "text-yellow-400" },
-    { type: "task", title: "Comprar cuerdas - Completado", time: "5 horas", icon: CheckSquare, color: "text-blue-400" },
-  ])
+  // Cambiar los datos iniciales para que estén vacíos
+  const [recentActivity] = useState([])
 
-  const [upcomingEvents] = useState([
-    { title: "Ensayo - Estudio Central", date: "2025-01-09", time: "19:00", type: "rehearsal" },
-    { title: "Show - Bar El Refugio", date: "2025-01-15", time: "22:30", type: "gig" },
-    { title: "Grabación - Estudio Norte", date: "2025-01-20", time: "15:00", type: "recording" },
-  ])
+  const [upcomingEvents] = useState([])
 
   const [songStats] = useState({
-    total: 24,
-    ready: 8,
-    practicing: 12,
-    developing: 4,
+    total: 0,
+    ready: 0,
+    practicing: 0,
+    developing: 0,
   })
 
   return (

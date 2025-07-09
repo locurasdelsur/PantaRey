@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight } from "lucide-react"
+import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -29,89 +29,33 @@ interface PhotoSession {
 }
 
 export default function PhotosPage() {
-  const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([
-    {
-      id: 1,
-      date: "2025-01-08",
-      title: "Ensayo General - Estudio Central",
-      location: "Estudio Central - Sala 3",
-      photos: [
-        {
-          id: 1,
-          url: "/placeholder.svg?height=300&width=400",
-          title: "Setup completo",
-          date: "2025-01-08",
-          location: "Estudio Central",
-          photographer: "Fernando",
-          tags: ["ensayo", "setup", "instrumentos"],
-        },
-        {
-          id: 2,
-          url: "/placeholder.svg?height=300&width=400",
-          title: "Emanuel en guitarra",
-          date: "2025-01-08",
-          location: "Estudio Central",
-          photographer: "Cholo",
-          tags: ["ensayo", "guitarra", "emanuel"],
-        },
-        {
-          id: 3,
-          url: "/placeholder.svg?height=300&width=400",
-          title: "Momento de descanso",
-          date: "2025-01-08",
-          location: "Estudio Central",
-          photographer: "Fernando",
-          tags: ["ensayo", "descanso", "grupo"],
-        },
-      ],
-    },
-    {
-      id: 2,
-      date: "2025-01-05",
-      title: "Sesión de Grabación - Despertar",
-      location: "Estudio Norte",
-      photos: [
-        {
-          id: 4,
-          url: "/placeholder.svg?height=300&width=400",
-          title: "En cabina de grabación",
-          date: "2025-01-05",
-          location: "Estudio Norte",
-          photographer: "Técnico del estudio",
-          tags: ["grabacion", "cabina", "profesional"],
-        },
-        {
-          id: 5,
-          url: "/placeholder.svg?height=300&width=400",
-          title: "Mesa de mezclas",
-          date: "2025-01-05",
-          location: "Estudio Norte",
-          photographer: "Cholo",
-          tags: ["grabacion", "mezcla", "tecnico"],
-        },
-      ],
-    },
-    {
-      id: 3,
-      date: "2025-01-01",
-      title: "Primer ensayo del año",
-      location: "Casa de Juan",
-      photos: [
-        {
-          id: 6,
-          url: "/placeholder.svg?height=300&width=400",
-          title: "Brindis de año nuevo",
-          date: "2025-01-01",
-          location: "Casa de Emanuel",
-          photographer: "Fernando",
-          tags: ["celebracion", "año-nuevo", "grupo"],
-        },
-      ],
-    },
-  ])
+  // Cambiar el estado inicial para que esté vacío
+  const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([])
 
   const [selectedMonth, setSelectedMonth] = useState("2025-01")
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
+
+  // Agregar función para borrar sesión de fotos
+  const deletePhotoSession = (sessionId: number) => {
+    if (confirm("¿Estás seguro de que quieres eliminar esta sesión de fotos?")) {
+      setPhotoSessions(photoSessions.filter((session) => session.id !== sessionId))
+    }
+  }
+
+  // Agregar función para borrar foto individual
+  const deletePhoto = (sessionId: number, photoId: number) => {
+    if (confirm("¿Estás seguro de que quieres eliminar esta foto?")) {
+      setPhotoSessions(
+        photoSessions
+          .map((session) =>
+            session.id === sessionId
+              ? { ...session, photos: session.photos.filter((photo) => photo.id !== photoId) }
+              : session,
+          )
+          .filter((session) => session.photos.length > 0),
+      ) // Eliminar sesión si no quedan fotos
+    }
+  }
 
   const months = [
     { value: "2025-01", label: "Enero 2025" },
@@ -194,6 +138,7 @@ export default function PhotosPage() {
           {filteredSessions.map((session) => (
             <Card key={session.id} className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
               <CardHeader>
+                {/* En el JSX, agregar botón de eliminar sesión después del badge: */}
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-slate-800 flex items-center gap-2">
@@ -216,24 +161,43 @@ export default function PhotosPage() {
                       </span>
                     </CardDescription>
                   </div>
-                  <Badge variant="outline" className="text-slate-600 border-slate-300">
-                    {session.photos.length} fotos
-                  </Badge>
+                  <div className="flex gap-2">
+                    <Badge variant="outline" className="text-slate-600 border-slate-300">
+                      {session.photos.length} fotos
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deletePhotoSession(session.id)}
+                      className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {session.photos.map((photo) => (
-                    <div
-                      key={photo.id}
-                      className="relative group cursor-pointer"
-                      onClick={() => setSelectedPhoto(photo)}
-                    >
+                    // Para cada foto individual, agregar botón de eliminar:
+                    <div key={photo.id} className="relative group cursor-pointer">
                       <img
                         src={photo.url || "/placeholder.svg"}
                         alt={photo.title}
                         className="w-full h-32 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
+                        onClick={() => setSelectedPhoto(photo)}
                       />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deletePhoto(session.id, photo.id)
+                        }}
+                        className="absolute top-1 right-1 h-6 w-6 p-0 bg-red-500 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                       <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-center">
                           <p className="text-sm font-medium">{photo.title}</p>

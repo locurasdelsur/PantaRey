@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Lightbulb, Plus, Play, Pause, Upload, Mic, User, Tag } from "lucide-react"
+import { Lightbulb, Plus, Play, Pause, Upload, Mic, User, Tag, Trash2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -41,77 +41,7 @@ interface Comment {
 }
 
 export default function IdeasPage() {
-  const [ideas, setIdeas] = useState<Idea[]>([
-    {
-      id: 1,
-      title: "Riff de intro para balada",
-      type: "riff",
-      category: "intro",
-      author: "Emanuel",
-      content: "Progresión en Am - F - C - G con fingerpicking",
-      audioUrl: "/placeholder-audio.mp3",
-      tags: ["balada", "acústico", "fingerpicking"],
-      createdAt: "2025-01-08",
-      likes: 3,
-      comments: [
-        {
-          id: 1,
-          author: "Fernando",
-          content: 'Me gusta mucho! Podríamos usarlo para "Nuevo Amanecer"',
-          createdAt: "2025-01-08",
-        },
-      ],
-    },
-    {
-      id: 2,
-      title: "Letra para estribillo pegadizo",
-      type: "lyrics",
-      category: "chorus",
-      author: "Fernando",
-      content:
-        "Volar alto, sin mirar atrás\nEl viento nos lleva donde queremos estar\nSin límites, sin fronteras que cruzar\nEste es nuestro momento de brillar",
-      tags: ["pop-rock", "motivacional", "estribillo"],
-      createdAt: "2025-01-07",
-      likes: 5,
-      comments: [
-        { id: 1, author: "Cholo", content: "Muy buena! Tiene mucha fuerza", createdAt: "2025-01-07" },
-        {
-          id: 2,
-          author: "Emanuel",
-          content: "Me encanta la melodía que se me ocurre para esto",
-          createdAt: "2025-01-08",
-        },
-      ],
-    },
-    {
-      id: 3,
-      title: "Línea de bajo funky",
-      type: "riff",
-      category: "verse",
-      author: "Cholo",
-      content: "Línea en E menor con slap, muy groovy para verso",
-      audioUrl: "/placeholder-audio.mp3",
-      tags: ["funk", "bajo", "groove"],
-      createdAt: "2025-01-06",
-      likes: 2,
-      comments: [],
-    },
-    {
-      id: 4,
-      title: "Concepto: Canción sobre la ciudad",
-      type: "concept",
-      category: "complete",
-      author: "Fernando",
-      content:
-        "Una canción que hable sobre la vida en la ciudad, el ruido, las luces, la soledad entre multitudes. Estilo indie rock.",
-      tags: ["indie", "urbano", "concepto"],
-      createdAt: "2025-01-05",
-      likes: 4,
-      comments: [
-        { id: 1, author: "Emanuel", content: "Excelente concepto, podríamos desarrollarlo", createdAt: "2025-01-06" },
-      ],
-    },
-  ])
+  const [ideas, setIdeas] = useState<Idea[]>([])
 
   const [newIdea, setNewIdea] = useState({
     title: "",
@@ -207,6 +137,12 @@ export default function IdeasPage() {
 
   const likeIdea = (ideaId: number) => {
     setIdeas(ideas.map((idea) => (idea.id === ideaId ? { ...idea, likes: idea.likes + 1 } : idea)))
+  }
+
+  const deleteIdea = (ideaId: number) => {
+    if (confirm("¿Estás seguro de que quieres eliminar esta idea?")) {
+      setIdeas(ideas.filter((idea) => idea.id !== ideaId))
+    }
   }
 
   const filteredIdeas = ideas.filter((idea) => {
@@ -397,6 +333,14 @@ export default function IdeasPage() {
                     <Badge variant="outline" className="text-gray-500 border-gray-300">
                       {getCategoryText(idea.category)}
                     </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteIdea(idea.id)}
+                      className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
                 <CardDescription className="text-gray-500 flex items-center gap-2">
