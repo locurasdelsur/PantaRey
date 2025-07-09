@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
+import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Trash2, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { Input } from "@/components/ui/input"
@@ -29,7 +29,7 @@ interface Photo {
   location: string
   photographer: string
   tags: string[]
-  base64Data?: string // Agregar campo para datos base64
+  base64Data?: string
 }
 
 interface PhotoSession {
@@ -45,6 +45,8 @@ export default function PhotosPage() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
+  const [uploadError, setUploadError] = useState("")
+  const [isProcessing, setIsProcessing] = useState(false)
   const [newPhotoSession, setNewPhotoSession] = useState({
     title: "",
     date: "",
@@ -72,75 +74,129 @@ export default function PhotosPage() {
     }
   }, [photoSessions])
 
-  // Función para convertir archivo a base64
+  // Función mejorada para convertir archivo a base64 con validación
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
+      // Validar tamaño del archivo (máximo 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        reject(new Error(`El archivo ${file.name} es demasiado grande. Máximo 5MB.`))
+        return
+      }
+
+      // Validar tipo de archivo
+      if (!file.type.startsWith("image/")) {
+        reject(new Error(`${file.name} no es un archivo de imagen válido.`))
+        return
+      }
+
       const reader = new FileReader()
       reader.readAsDataURL(file)
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = (error) => reject(error)
+      reader.onload = () => {
+        try {
+          resolve(reader.result as string)
+        } catch (error) {
+          reject(new Error(`Error procesando ${file.name}`))
+        }
+      }
+      reader.onerror = () => reject(new Error(`Error leyendo ${file.name}`))
     })
   }
 
-  // Agregar función para manejar la subida de archivos
+  // Función mejorada para manejar la subida de archivos
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
+    setUploadError("")
+
     if (files) {
       const fileArray = Array.from(files)
+
+      // Validar número de archivos
+      if (fileArray.length > 10) {
+        setUploadError("Máximo 10 archivos por sesión")
+        return
+      }
+
+      // Validar cada archivo
+      for (const file of fileArray) {
+        if (file.size > 5 * 1024 * 1024) {
+          setUploadError(`${file.name} es demasiado grande (máximo 5MB)`)
+          return
+        }
+        if (!file.type.startsWith("image/")) {
+          setUploadError(`${file.name} no es una imagen válida`)
+          return
+        }
+      }
+
       setNewPhotoSession({ ...newPhotoSession, photos: fileArray })
     }
   }
 
-  // Modificar función para crear nueva sesión de fotos
+  // Función mejorada para crear nueva sesión de fotos
   const handleCreatePhotoSession = async () => {
-    if (newPhotoSession.title && newPhotoSession.date && newPhotoSession.photos.length > 0) {
-      try {
-        // Convertir todas las fotos a base64
-        const photosWithBase64 = await Promise.all(
-          newPhotoSession.photos.map(async (file, index) => {
-            const base64Data = await fileToBase64(file)
-            return {
-              id: Date.now() + index,
-              url: base64Data, // Usar base64 como URL
-              title: file.name.replace(/\.[^/.]+$/, ""),
-              date: newPhotoSession.date,
-              location: newPhotoSession.location,
-              photographer: "Usuario",
-              tags: ["nueva-sesion"],
-              base64Data: base64Data,
-            }
-          }),
-        )
+    if (!newPhotoSession.title || !newPhotoSession.date || newPhotoSession.photos.length === 0) {
+      setUploadError("Por favor completa todos los campos y selecciona al menos una foto")
+      return
+    }
 
-        const newSession: PhotoSession = {
-          id: Date.now(),
-          title: newPhotoSession.title,
-          date: newPhotoSession.date,
-          location: newPhotoSession.location,
-          photos: photosWithBase64,
+    setIsProcessing(true)
+    setUploadError("")
+
+    try {
+      // Procesar archivos uno por uno para evitar sobrecarga de memoria
+      const photosWithBase64: Photo[] = []
+
+      for (let i = 0; i < newPhotoSession.photos.length; i++) {
+        const file = newPhotoSession.photos[i]
+        try {
+          const base64Data = await fileToBase64(file)
+          photosWithBase64.push({
+            id: Date.now() + i,
+            url: base64Data,
+            title: file.name.replace(/\.[^/.]+$/, ""),
+            date: newPhotoSession.date,
+            location: newPhotoSession.location,
+            photographer: "Usuario",
+            tags: ["nueva-sesion"],
+            base64Data: base64Data,
+          })
+        } catch (error) {
+          console.error(`Error procesando ${file.name}:`, error)
+          setUploadError(`Error procesando ${file.name}: ${error.message}`)
+          setIsProcessing(false)
+          return
         }
-
-        setPhotoSessions([...photoSessions, newSession])
-        setNewPhotoSession({
-          title: "",
-          date: "",
-          location: "",
-          photos: [],
-        })
-        setIsUploadDialogOpen(false)
-      } catch (error) {
-        console.error("Error processing photos:", error)
-        alert("Error al procesar las fotos. Por favor, intenta de nuevo.")
       }
+
+      const newSession: PhotoSession = {
+        id: Date.now(),
+        title: newPhotoSession.title,
+        date: newPhotoSession.date,
+        location: newPhotoSession.location,
+        photos: photosWithBase64,
+      }
+
+      setPhotoSessions([...photoSessions, newSession])
+      setNewPhotoSession({
+        title: "",
+        date: "",
+        location: "",
+        photos: [],
+      })
+      setIsUploadDialogOpen(false)
+    } catch (error) {
+      console.error("Error creating photo session:", error)
+      setUploadError("Error al crear la sesión de fotos. Por favor, intenta de nuevo.")
+    } finally {
+      setIsProcessing(false)
     }
   }
 
-  // Agregar función para borrar sesión de fotos
+  // Función para borrar sesión de fotos
   const deletePhotoSession = (sessionId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta sesión de fotos?")) {
       const updatedSessions = photoSessions.filter((session) => session.id !== sessionId)
       setPhotoSessions(updatedSessions)
-      // Actualizar localStorage inmediatamente
       if (updatedSessions.length === 0) {
         localStorage.removeItem("bandPhotoSessions")
       } else {
@@ -149,7 +205,7 @@ export default function PhotosPage() {
     }
   }
 
-  // Agregar función para borrar foto individual
+  // Función para borrar foto individual
   const deletePhoto = (sessionId: number, photoId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta foto?")) {
       const updatedSessions = photoSessions
@@ -158,10 +214,9 @@ export default function PhotosPage() {
             ? { ...session, photos: session.photos.filter((photo) => photo.id !== photoId) }
             : session,
         )
-        .filter((session) => session.photos.length > 0) // Eliminar sesión si no quedan fotos
+        .filter((session) => session.photos.length > 0)
 
       setPhotoSessions(updatedSessions)
-      // Actualizar localStorage inmediatamente
       if (updatedSessions.length === 0) {
         localStorage.removeItem("bandPhotoSessions")
       } else {
@@ -170,15 +225,13 @@ export default function PhotosPage() {
     }
   }
 
-  // Y reemplazar el array estático de months por esta función:
   const generateMonths = () => {
     const months = []
     const currentDate = new Date()
 
-    // Agregar los últimos 12 meses desde la fecha actual
     for (let i = 0; i < 12; i++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
-      const value = date.toISOString().slice(0, 7) // YYYY-MM
+      const value = date.toISOString().slice(0, 7)
       const label = date.toLocaleDateString("es-ES", {
         year: "numeric",
         month: "long",
@@ -186,7 +239,7 @@ export default function PhotosPage() {
 
       months.push({
         value,
-        label: label.charAt(0).toUpperCase() + label.slice(1), // Capitalizar primera letra
+        label: label.charAt(0).toUpperCase() + label.slice(1),
       })
     }
 
@@ -195,7 +248,6 @@ export default function PhotosPage() {
 
   const months = generateMonths()
 
-  // Agregar después de la función generateMonths:
   const getMonthStats = () => {
     const stats: { [key: string]: number } = {}
 
@@ -227,7 +279,6 @@ export default function PhotosPage() {
     setSelectedPhoto(allPhotos[newIndex])
   }
 
-  // Agregar estas funciones después de navigatePhoto:
   const navigateMonth = (direction: "prev" | "next") => {
     const currentIndex = months.findIndex((m) => m.value === selectedMonth)
     if (currentIndex === -1) return
@@ -242,39 +293,48 @@ export default function PhotosPage() {
     setSelectedMonth(months[newIndex].value)
   }
 
-  // Modificar función para agregar fotos a sesiones existentes
+  // Función mejorada para agregar fotos a sesiones existentes
   const addPhotosToSession = async (sessionId: number, files: File[]) => {
     const session = photoSessions.find((s) => s.id === sessionId)
-    if (session) {
-      try {
-        // Convertir nuevas fotos a base64
-        const newPhotosWithBase64 = await Promise.all(
-          files.map(async (file, index) => {
-            const base64Data = await fileToBase64(file)
-            return {
-              id: Date.now() + index,
-              url: base64Data,
-              title: file.name.replace(/\.[^/.]+$/, ""),
-              date: session.date,
-              location: session.location,
-              photographer: "Usuario",
-              tags: ["agregada-posteriormente"],
-              base64Data: base64Data,
-            }
-          }),
-        )
+    if (!session) return
 
-        const updatedSessions = photoSessions.map((s) =>
-          s.id === sessionId ? { ...s, photos: [...s.photos, ...newPhotosWithBase64] } : s,
-        )
+    setIsProcessing(true)
+    try {
+      const newPhotosWithBase64: Photo[] = []
 
-        setPhotoSessions(updatedSessions)
-        // Guardar inmediatamente en localStorage
-        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
-      } catch (error) {
-        console.error("Error adding photos:", error)
-        alert("Error al agregar las fotos. Por favor, intenta de nuevo.")
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        try {
+          const base64Data = await fileToBase64(file)
+          newPhotosWithBase64.push({
+            id: Date.now() + i,
+            url: base64Data,
+            title: file.name.replace(/\.[^/.]+$/, ""),
+            date: session.date,
+            location: session.location,
+            photographer: "Usuario",
+            tags: ["agregada-posteriormente"],
+            base64Data: base64Data,
+          })
+        } catch (error) {
+          console.error(`Error adding photo ${file.name}:`, error)
+          alert(`Error al agregar ${file.name}: ${error.message}`)
+          setIsProcessing(false)
+          return
+        }
       }
+
+      const updatedSessions = photoSessions.map((s) =>
+        s.id === sessionId ? { ...s, photos: [...s.photos, ...newPhotosWithBase64] } : s,
+      )
+
+      setPhotoSessions(updatedSessions)
+      localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
+    } catch (error) {
+      console.error("Error adding photos:", error)
+      alert("Error al agregar las fotos. Por favor, intenta de nuevo.")
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -300,7 +360,6 @@ export default function PhotosPage() {
             <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
           </div>
 
-          {/* Cambiar el botón "Subir Fotos" para que abra el diálogo */}
           <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg">
@@ -316,6 +375,13 @@ export default function PhotosPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
+                {uploadError && (
+                  <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-red-700 text-sm">{uploadError}</span>
+                  </div>
+                )}
+
                 <Input
                   placeholder="Título de la sesión (ej: Ensayo - Estudio Central)"
                   value={newPhotoSession.title}
@@ -352,7 +418,7 @@ export default function PhotosPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="photo-upload" className="text-slate-700">
-                    Seleccionar fotos
+                    Seleccionar fotos (máximo 10 archivos, 5MB cada uno)
                   </Label>
                   <Input
                     id="photo-upload"
@@ -361,6 +427,7 @@ export default function PhotosPage() {
                     accept="image/*"
                     onChange={handleFileUpload}
                     className="bg-slate-50 border-slate-200 text-slate-800"
+                    disabled={isProcessing}
                   />
                   {newPhotoSession.photos.length > 0 && (
                     <p className="text-sm text-slate-600">
@@ -381,6 +448,7 @@ export default function PhotosPage() {
                             src={URL.createObjectURL(file) || "/placeholder.svg"}
                             alt={`Preview ${index + 1}`}
                             className="w-full h-16 object-cover rounded border"
+                            onLoad={() => URL.revokeObjectURL(URL.createObjectURL(file))}
                           />
                           <button
                             type="button"
@@ -389,6 +457,7 @@ export default function PhotosPage() {
                               setNewPhotoSession({ ...newPhotoSession, photos: newPhotos })
                             }}
                             className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs hover:bg-red-600"
+                            disabled={isProcessing}
                           >
                             ×
                           </button>
@@ -400,10 +469,15 @@ export default function PhotosPage() {
 
                 <Button
                   onClick={handleCreatePhotoSession}
-                  disabled={!newPhotoSession.title || !newPhotoSession.date || newPhotoSession.photos.length === 0}
+                  disabled={
+                    !newPhotoSession.title ||
+                    !newPhotoSession.date ||
+                    newPhotoSession.photos.length === 0 ||
+                    isProcessing
+                  }
                   className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
                 >
-                  Crear Sesión de Fotos ({newPhotoSession.photos.length} fotos)
+                  {isProcessing ? "Procesando..." : `Crear Sesión de Fotos (${newPhotoSession.photos.length} fotos)`}
                 </Button>
               </div>
             </DialogContent>
@@ -411,7 +485,6 @@ export default function PhotosPage() {
         </div>
 
         {/* Month Filter */}
-        {/* Reemplazar la Card del filtro de mes por: */}
         <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg mb-6">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -426,7 +499,6 @@ export default function PhotosPage() {
                     <SelectTrigger className="w-[200px] bg-slate-50 border-slate-200">
                       <SelectValue placeholder="Seleccionar mes" />
                     </SelectTrigger>
-                    {/* En el JSX del selector, reemplazar el SelectContent por: */}
                     <SelectContent className="bg-white border-slate-200">
                       {months.map((month) => (
                         <SelectItem key={month.value} value={month.value}>
@@ -469,7 +541,6 @@ export default function PhotosPage() {
           {filteredSessions.map((session) => (
             <Card key={session.id} className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
               <CardHeader>
-                {/* En el JSX, agregar botón de eliminar sesión después del badge: */}
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-slate-800 flex items-center gap-2">
@@ -510,7 +581,6 @@ export default function PhotosPage() {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {session.photos.map((photo) => (
-                    // Para cada foto individual, agregar botón de eliminar:
                     <div key={photo.id} className="relative group cursor-pointer">
                       <img
                         src={photo.url || "/placeholder.svg"}
@@ -550,14 +620,20 @@ export default function PhotosPage() {
                           onChange={(e) => {
                             if (e.target.files) {
                               addPhotosToSession(session.id, Array.from(e.target.files))
-                              e.target.value = "" // Limpiar el input
+                              e.target.value = ""
                             }
                           }}
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          disabled={isProcessing}
                         />
-                        <Button variant="outline" size="sm" className="border-slate-300 text-slate-600 bg-transparent">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-slate-300 text-slate-600 bg-transparent"
+                          disabled={isProcessing}
+                        >
                           <Plus className="h-3 w-3 mr-1" />
-                          Agregar
+                          {isProcessing ? "Procesando..." : "Agregar"}
                         </Button>
                       </div>
                     </div>

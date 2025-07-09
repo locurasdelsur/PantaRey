@@ -165,16 +165,6 @@ export default function LoginPage() {
                 </Link>
               </p>
             </div>
-
-            {/* Demo Users */}
-            <div className="mt-6 p-4 bg-slate-50 rounded-lg">
-              <p className="text-xs text-slate-500 mb-2 font-medium">Usuarios de prueba:</p>
-              <div className="space-y-1 text-xs text-slate-600">
-                <p>• cholo@pantarei.com / 123456</p>
-                <p>• fernando@pantarei.com / 123456</p>
-                <p>• emanuel@pantarei.com / 123456</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>
