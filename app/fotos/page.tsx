@@ -43,7 +43,10 @@ export default function PhotosPage() {
   // Cambiar el estado inicial para que esté vacío
   const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([])
 
-  const [selectedMonth, setSelectedMonth] = useState("2025-01")
+  // Reemplazar esta línea:
+  //const [selectedMonth, setSelectedMonth] = useState("2025-01")
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
+
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
 
   // Agregar estado para el diálogo de subir fotos
@@ -116,11 +119,44 @@ export default function PhotosPage() {
     }
   }
 
-  const months = [
-    { value: "2025-01", label: "Enero 2025" },
-    { value: "2024-12", label: "Diciembre 2024" },
-    { value: "2024-11", label: "Noviembre 2024" },
-  ]
+  // Y reemplazar el array estático de months por esta función:
+  const generateMonths = () => {
+    const months = []
+    const currentDate = new Date()
+
+    // Agregar los últimos 12 meses desde la fecha actual
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
+      const value = date.toISOString().slice(0, 7) // YYYY-MM
+      const label = date.toLocaleDateString("es-ES", {
+        year: "numeric",
+        month: "long",
+      })
+
+      months.push({
+        value,
+        label: label.charAt(0).toUpperCase() + label.slice(1), // Capitalizar primera letra
+      })
+    }
+
+    return months
+  }
+
+  const months = generateMonths()
+
+  // Agregar después de la función generateMonths:
+  const getMonthStats = () => {
+    const stats: { [key: string]: number } = {}
+
+    photoSessions.forEach((session) => {
+      const monthKey = session.date.slice(0, 7)
+      stats[monthKey] = (stats[monthKey] || 0) + session.photos.length
+    })
+
+    return stats
+  }
+
+  const monthStats = getMonthStats()
 
   const filteredSessions = photoSessions.filter((session) => session.date.startsWith(selectedMonth))
 
@@ -138,6 +174,21 @@ export default function PhotosPage() {
     }
 
     setSelectedPhoto(allPhotos[newIndex])
+  }
+
+  // Agregar estas funciones después de navigatePhoto:
+  const navigateMonth = (direction: "prev" | "next") => {
+    const currentIndex = months.findIndex((m) => m.value === selectedMonth)
+    if (currentIndex === -1) return
+
+    let newIndex
+    if (direction === "prev") {
+      newIndex = currentIndex < months.length - 1 ? currentIndex + 1 : 0
+    } else {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : months.length - 1
+    }
+
+    setSelectedMonth(months[newIndex].value)
   }
 
   // También agregar una función para agregar fotos a sesiones existentes
@@ -293,25 +344,55 @@ export default function PhotosPage() {
         </div>
 
         {/* Month Filter */}
+        {/* Reemplazar la Card del filtro de mes por: */}
         <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg mb-6">
           <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <Calendar className="h-5 w-5 text-slate-600" />
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="w-[200px] bg-slate-50 border-slate-200">
-                  <SelectValue placeholder="Seleccionar mes" />
-                </SelectTrigger>
-                <SelectContent className="bg-white border-slate-200">
-                  {months.map((month) => (
-                    <SelectItem key={month.value} value={month.value}>
-                      {month.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Badge variant="outline" className="text-slate-600 border-slate-300">
-                {filteredSessions.reduce((total, session) => total + session.photos.length, 0)} fotos
-              </Badge>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => navigateMonth("prev")} className="h-8 w-8 p-0">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center gap-4">
+                  <Calendar className="h-5 w-5 text-slate-600" />
+                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                    <SelectTrigger className="w-[200px] bg-slate-50 border-slate-200">
+                      <SelectValue placeholder="Seleccionar mes" />
+                    </SelectTrigger>
+                    {/* En el JSX del selector, reemplazar el SelectContent por: */}
+                    <SelectContent className="bg-white border-slate-200">
+                      {months.map((month) => (
+                        <SelectItem key={month.value} value={month.value}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{month.label}</span>
+                            {monthStats[month.value] && (
+                              <Badge variant="outline" className="ml-2 text-xs">
+                                {monthStats[month.value]}
+                              </Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedMonth === new Date().toISOString().slice(0, 7) && (
+                    <Badge className="bg-green-500 text-white">Mes actual</Badge>
+                  )}
+                </div>
+
+                <Button variant="outline" size="sm" onClick={() => navigateMonth("next")} className="h-8 w-8 p-0">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Badge variant="outline" className="text-slate-600 border-slate-300">
+                  {filteredSessions.reduce((total, session) => total + session.photos.length, 0)} fotos
+                </Badge>
+                <Badge variant="outline" className="text-slate-600 border-slate-300">
+                  {filteredSessions.length} sesiones
+                </Badge>
+              </div>
             </div>
           </CardContent>
         </Card>
