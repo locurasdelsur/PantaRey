@@ -412,7 +412,7 @@ export default function PhotosPage() {
                     <CardDescription className="text-slate-600 flex items-center gap-4 mt-2">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-4 w-4" />
-                        {new Date(session.date).toLocaleDateString("es-ES", {
+                        {new Date(session.date + "T00:00:00").toLocaleDateString("es-ES", {
                           weekday: "long",
                           year: "numeric",
                           month: "long",
@@ -517,7 +517,13 @@ export default function PhotosPage() {
               <DialogHeader>
                 <DialogTitle className="text-slate-800">{selectedPhoto.title}</DialogTitle>
                 <DialogDescription className="text-slate-600">
-                  {selectedPhoto.date} • {selectedPhoto.location} • por {selectedPhoto.photographer}
+                  {new Date(selectedPhoto.date + "T00:00:00").toLocaleDateString("es-ES", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}{" "}
+                  • {selectedPhoto.location} • por {selectedPhoto.photographer}
                 </DialogDescription>
               </DialogHeader>
               <div className="relative">
