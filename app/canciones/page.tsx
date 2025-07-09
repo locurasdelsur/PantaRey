@@ -19,7 +19,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Music,
   Play,
-  Pause,
   Upload,
   Video,
   Plus,
@@ -33,6 +32,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
+import { AudioPlayer } from "@/components/audio-player"
 
 interface Comment {
   id: number
@@ -77,6 +77,8 @@ interface Song {
 
 export default function SongsManager() {
   const [songs, setSongs] = useState<Song[]>([])
+  const [currentTrack, setCurrentTrack] = useState<any>(null)
+  const [playlist, setPlaylist] = useState<any[]>([])
 
   // Cargar canciones al inicializar
   useEffect(() => {
@@ -85,6 +87,19 @@ export default function SongsManager() {
       try {
         const parsedSongs = JSON.parse(savedSongs)
         setSongs(parsedSongs)
+
+        // Crear playlist con todas las grabaciones
+        const allRecordings = parsedSongs.flatMap((song: Song) =>
+          song.recordings.map((recording) => ({
+            id: recording.id,
+            title: `${song.title} - ${recording.name}`,
+            artist: song.type === "original" ? "Panta Rei Project" : `Panta Rei Project (Cover)`,
+            url: recording.url || "/placeholder-audio.mp3", // URL placeholder para demo
+            type: recording.type,
+            songId: song.id,
+          })),
+        )
+        setPlaylist(allRecordings)
       } catch (error) {
         console.error("Error loading songs:", error)
       }
@@ -101,7 +116,6 @@ export default function SongsManager() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [filterType, setFilterType] = useState<string>("all")
-  const [isPlaying, setIsPlaying] = useState<number | null>(null)
   const [newComment, setNewComment] = useState("")
   const [selectedSong, setSelectedSong] = useState<number | null>(null)
 
@@ -192,7 +206,23 @@ export default function SongsManager() {
           date: new Date().toISOString().split("T")[0],
         },
       ],
-      recordings: [],
+      recordings: [
+        // Agregar grabaciones demo para mostrar el reproductor
+        {
+          id: Date.now() + 1,
+          name: "Demo Acústico",
+          url: "/placeholder-audio.mp3",
+          type: "acustica",
+          uploadDate: new Date().toISOString().split("T")[0],
+        },
+        {
+          id: Date.now() + 2,
+          name: "Versión Eléctrica",
+          url: "/placeholder-audio.mp3",
+          type: "electrica",
+          uploadDate: new Date().toISOString().split("T")[0],
+        },
+      ],
     }
     setSongs([...songs, song])
     setNewSong({
@@ -203,13 +233,24 @@ export default function SongsManager() {
       chords: "",
       notes: "",
     })
+
+    // Actualizar playlist
+    const newRecordings = song.recordings.map((recording) => ({
+      id: recording.id,
+      title: `${song.title} - ${recording.name}`,
+      artist: song.type === "original" ? "Panta Rei Project" : `Panta Rei Project (Cover)`,
+      url: recording.url,
+      type: recording.type,
+      songId: song.id,
+    }))
+    setPlaylist([...playlist, ...newRecordings])
   }
 
   const handleAddComment = (songId: number) => {
     if (newComment.trim()) {
       const comment: Comment = {
         id: Date.now(),
-        author: "Emanuel", // o el usuario actual logueado
+        author: "Emanuel",
         content: newComment,
         timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
       }
@@ -219,12 +260,19 @@ export default function SongsManager() {
     }
   }
 
-  const togglePlay = (songId: number) => {
-    setIsPlaying(isPlaying === songId ? null : songId)
+  const playRecording = (recording: Recording, song: Song) => {
+    const track = {
+      id: recording.id,
+      title: `${song.title} - ${recording.name}`,
+      artist: song.type === "original" ? "Panta Rei Project" : `Panta Rei Project (Cover)`,
+      url: recording.url,
+      type: getRecordingTypeText(recording.type),
+      songId: song.id,
+    }
+    setCurrentTrack(track)
   }
 
   const generatePDF = (song: Song) => {
-    // En una implementación real, esto generaría un PDF
     alert(`Generando PDF de "${song.title}"...`)
   }
 
@@ -232,7 +280,16 @@ export default function SongsManager() {
     if (confirm("¿Estás seguro de que quieres eliminar esta canción?")) {
       const updatedSongs = songs.filter((song) => song.id !== songId)
       setSongs(updatedSongs)
-      // Actualizar localStorage inmediatamente
+
+      // Actualizar playlist
+      const updatedPlaylist = playlist.filter((track) => track.songId !== songId)
+      setPlaylist(updatedPlaylist)
+
+      // Si la canción actual se está reproduciendo, detenerla
+      if (currentTrack && currentTrack.songId === songId) {
+        setCurrentTrack(null)
+      }
+
       if (updatedSongs.length === 0) {
         localStorage.removeItem("bandSongs")
       } else {
@@ -335,6 +392,11 @@ export default function SongsManager() {
               </div>
             </DialogContent>
           </Dialog>
+        </div>
+
+        {/* Audio Player */}
+        <div className="mb-6">
+          <AudioPlayer track={currentTrack} playlist={playlist} onTrackChange={setCurrentTrack} />
         </div>
 
         {/* Filters */}
@@ -460,7 +522,6 @@ export default function SongsManager() {
 
                   <TabsContent value="media" className="mt-4">
                     <div className="space-y-3">
-                      {/* Grabaciones con etiquetas */}
                       {song.recordings.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-slate-700 mb-2">Grabaciones:</p>
@@ -468,7 +529,7 @@ export default function SongsManager() {
                             {song.recordings.map((recording) => (
                               <div
                                 key={recording.id}
-                                className="flex items-center justify-between p-2 bg-slate-50 rounded"
+                                className="flex items-center justify-between p-2 bg-slate-50 rounded hover:bg-slate-100 transition-colors"
                               >
                                 <div className="flex-1">
                                   <p className="text-xs font-medium text-slate-700">{recording.name}</p>
@@ -482,14 +543,10 @@ export default function SongsManager() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => togglePlay(recording.id)}
-                                  className="h-8 w-8 p-0"
+                                  onClick={() => playRecording(recording, song)}
+                                  className="h-8 w-8 p-0 hover:bg-purple-100"
                                 >
-                                  {isPlaying === recording.id ? (
-                                    <Pause className="h-3 w-3" />
-                                  ) : (
-                                    <Play className="h-3 w-3" />
-                                  )}
+                                  <Play className="h-3 w-3 text-purple-600" />
                                 </Button>
                               </div>
                             ))}
