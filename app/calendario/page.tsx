@@ -164,6 +164,33 @@ export default function CalendarPage() {
     }
   }
 
+  const getCalendarStats = () => {
+    const today = new Date()
+    const thisWeek = new Date()
+    thisWeek.setDate(thisWeek.getDate() + 7)
+    const thisMonth = new Date()
+    thisMonth.setMonth(thisMonth.getMonth() + 1)
+
+    return {
+      total: events.length,
+      today: todayEvents.length,
+      thisWeek: events.filter((event) => {
+        const eventDate = new Date(event.date + "T" + (event.time || "00:00"))
+        return eventDate >= today && eventDate <= thisWeek
+      }).length,
+      thisMonth: events.filter((event) => {
+        const eventDate = new Date(event.date + "T" + (event.time || "00:00"))
+        return eventDate >= today && eventDate <= thisMonth
+      }).length,
+      rehearsals: events.filter((event) => event.type === "rehearsal").length,
+      gigs: events.filter((event) => event.type === "gig").length,
+      recordings: events.filter((event) => event.type === "recording").length,
+      meetings: events.filter((event) => event.type === "meeting").length,
+    }
+  }
+
+  const calendarStats = getCalendarStats()
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
       <div className="container mx-auto p-6">
@@ -251,6 +278,57 @@ export default function CalendarPage() {
               </div>
             </DialogContent>
           </Dialog>
+        </div>
+
+        {/* Calendar Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Calendar className="h-6 w-6 text-blue-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Esta Semana</p>
+                  <p className="text-2xl font-bold text-slate-800">{calendarStats.thisWeek}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Music2 className="h-6 w-6 text-green-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Ensayos</p>
+                  <p className="text-2xl font-bold text-slate-800">{calendarStats.rehearsals}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Mic className="h-6 w-6 text-purple-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Shows</p>
+                  <p className="text-2xl font-bold text-slate-800">{calendarStats.gigs}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Users className="h-6 w-6 text-orange-500" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Total Eventos</p>
+                  <p className="text-2xl font-bold text-slate-800">{calendarStats.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Today's Events */}

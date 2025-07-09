@@ -389,6 +389,27 @@ export default function PhotosPage() {
     }
   }
 
+  const getPhotoStats = () => {
+    const totalPhotos = photoSessions.reduce((sum, session) => sum + session.photos.length, 0)
+    const thisMonth = photoSessions.filter((session) => session.date.startsWith(selectedMonth))
+    const thisMonthPhotos = thisMonth.reduce((sum, session) => sum + session.photos.length, 0)
+
+    const today = new Date().toISOString().split("T")[0]
+    const thisWeek = new Date()
+    thisWeek.setDate(thisWeek.getDate() - 7)
+
+    return {
+      totalSessions: photoSessions.length,
+      totalPhotos: totalPhotos,
+      thisMonth: thisMonthPhotos,
+      thisMonthSessions: thisMonth.length,
+      thisWeek: photoSessions.filter((session) => new Date(session.date) >= thisWeek).length,
+      averagePerSession: photoSessions.length > 0 ? Math.round(totalPhotos / photoSessions.length) : 0,
+    }
+  }
+
+  const photoStats = getPhotoStats()
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
       <div className="container mx-auto p-6">
@@ -612,6 +633,18 @@ export default function PhotosPage() {
                 >
                   {selectionMode ? "Cancelar" : "Seleccionar"}
                 </Button>
+
+                <div className="flex items-center gap-4">
+                  <Badge variant="outline" className="text-slate-600 border-slate-300">
+                    {photoStats.thisMonth} fotos este mes
+                  </Badge>
+                  <Badge variant="outline" className="text-slate-600 border-slate-300">
+                    {photoStats.thisMonthSessions} sesiones
+                  </Badge>
+                  <Badge variant="outline" className="text-slate-600 border-slate-300">
+                    {photoStats.totalPhotos} fotos total
+                  </Badge>
+                </div>
 
                 <Badge variant="outline" className="text-slate-600 border-slate-300">
                   {filteredSessions.reduce((total, session) => total + session.photos.length, 0)} fotos

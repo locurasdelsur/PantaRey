@@ -28,15 +28,23 @@ interface Task {
   assignee: string
   dueDate?: string
   createdAt: string
+  createdBy: string
 }
 
 export default function TasksPage() {
-  // El estado inicial ya está vacío, pero vamos a limpiar los datos demo
   const [tasks, setTasks] = useState<Task[]>([])
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
-  // Cargar tareas al inicializar
+  // Cargar datos globales compartidos
   useEffect(() => {
-    const savedTasks = localStorage.getItem("bandTasks")
+    // Cargar usuario actual
+    const user = localStorage.getItem("currentUser")
+    if (user) {
+      setCurrentUser(JSON.parse(user))
+    }
+
+    // Cargar tareas globales
+    const savedTasks = localStorage.getItem("globalBandTasks")
     if (savedTasks) {
       try {
         const parsedTasks = JSON.parse(savedTasks)
@@ -47,10 +55,10 @@ export default function TasksPage() {
     }
   }, [])
 
-  // Guardar tareas automáticamente
+  // Guardar tareas globalmente
   useEffect(() => {
     if (tasks.length > 0) {
-      localStorage.setItem("bandTasks", JSON.stringify(tasks))
+      localStorage.setItem("globalBandTasks", JSON.stringify(tasks))
     }
   }, [tasks])
 
@@ -109,8 +117,11 @@ export default function TasksPage() {
       id: Date.now(),
       ...newTask,
       createdAt: new Date().toISOString().split("T")[0],
+      createdBy: currentUser?.name || "Usuario",
     }
-    setTasks([...tasks, task])
+    const updatedTasks = [...tasks, task]
+    setTasks(updatedTasks)
+    localStorage.setItem("globalBandTasks", JSON.stringify(updatedTasks))
     setNewTask({
       title: "",
       description: "",
@@ -124,18 +135,16 @@ export default function TasksPage() {
   const moveTask = (taskId: number, newStatus: "todo" | "doing" | "done") => {
     const updatedTasks = tasks.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task))
     setTasks(updatedTasks)
-    localStorage.setItem("bandTasks", JSON.stringify(updatedTasks))
+    localStorage.setItem("globalBandTasks", JSON.stringify(updatedTasks))
   }
 
-  // La función deleteTask ya existe, solo necesitamos asegurar que funcione correctamente
   const deleteTask = (taskId: number) => {
     const updatedTasks = tasks.filter((task) => task.id !== taskId)
     setTasks(updatedTasks)
-    // Actualizar localStorage inmediatamente
     if (updatedTasks.length === 0) {
-      localStorage.removeItem("bandTasks")
+      localStorage.removeItem("globalBandTasks")
     } else {
-      localStorage.setItem("bandTasks", JSON.stringify(updatedTasks))
+      localStorage.setItem("globalBandTasks", JSON.stringify(updatedTasks))
     }
   }
 
@@ -165,7 +174,7 @@ export default function TasksPage() {
       </CardHeader>
       <CardContent className="pt-0">
         {task.description && <p className="text-xs text-gray-500 mb-3">{task.description}</p>}
-        <div className="flex items-center justify-between text-xs text-gray-500">
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
           <div className="flex items-center gap-1">
             <User className="h-3 w-3" />
             <span>{task.assignee}</span>
@@ -177,6 +186,7 @@ export default function TasksPage() {
             </div>
           )}
         </div>
+        <div className="text-xs text-gray-400 mb-3">Creada por: {task.createdBy}</div>
         <div className="flex gap-1 mt-3">
           {task.status !== "todo" && (
             <Button
@@ -212,6 +222,28 @@ export default function TasksPage() {
       </CardContent>
     </Card>
   )
+
+  const getTaskStats = () => {
+    const today = new Date().toISOString().split("T")[0]
+    const thisWeek = new Date()
+    thisWeek.setDate(thisWeek.getDate() - 7)
+
+    return {
+      total: tasks.length,
+      todo: todoTasks.length,
+      doing: doingTasks.length,
+      done: doneTasks.length,
+      completedToday: tasks.filter((task) => task.status === "done" && task.createdAt === today).length,
+      completedThisWeek: tasks.filter((task) => task.status === "done" && new Date(task.createdAt) >= thisWeek).length,
+      highPriority: tasks.filter((task) => task.priority === "high").length,
+      overdue: tasks.filter((task) => {
+        if (!task.dueDate) return false
+        return new Date(task.dueDate) < new Date() && task.status !== "done"
+      }).length,
+    }
+  }
+
+  const taskStats = getTaskStats()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
@@ -316,6 +348,9 @@ export default function TasksPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">{todoTasks.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {taskStats.overdue > 0 ? `${taskStats.overdue} vencidas` : "Al día"}
+              </p>
             </CardContent>
           </Card>
 
@@ -326,6 +361,9 @@ export default function TasksPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">{doingTasks.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {taskStats.highPriority > 0 ? `${taskStats.highPriority} alta prioridad` : "Sin urgencias"}
+              </p>
             </CardContent>
           </Card>
 
@@ -336,6 +374,9 @@ export default function TasksPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">{doneTasks.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {taskStats.completedThisWeek > 0 ? `${taskStats.completedThisWeek} esta semana` : "Ninguna esta semana"}
+              </p>
             </CardContent>
           </Card>
         </div>

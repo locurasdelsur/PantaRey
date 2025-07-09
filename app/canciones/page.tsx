@@ -73,16 +73,25 @@ interface Song {
   versions: Version[]
   recordings: Recording[]
   coverImage?: string
+  createdBy: string
 }
 
 export default function SongsManager() {
   const [songs, setSongs] = useState<Song[]>([])
   const [currentTrack, setCurrentTrack] = useState<any>(null)
   const [playlist, setPlaylist] = useState<any[]>([])
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
-  // Cargar canciones al inicializar
+  // Cargar datos globales compartidos
   useEffect(() => {
-    const savedSongs = localStorage.getItem("bandSongs")
+    // Cargar usuario actual
+    const user = localStorage.getItem("currentUser")
+    if (user) {
+      setCurrentUser(JSON.parse(user))
+    }
+
+    // Cargar canciones globales
+    const savedSongs = localStorage.getItem("globalBandSongs")
     if (savedSongs) {
       try {
         const parsedSongs = JSON.parse(savedSongs)
@@ -94,7 +103,7 @@ export default function SongsManager() {
             id: recording.id,
             title: `${song.title} - ${recording.name}`,
             artist: song.type === "original" ? "Panta Rei Project" : `Panta Rei Project (Cover)`,
-            url: recording.url || "/placeholder-audio.mp3", // URL placeholder para demo
+            url: recording.url || "/placeholder-audio.mp3",
             type: recording.type,
             songId: song.id,
           })),
@@ -106,10 +115,10 @@ export default function SongsManager() {
     }
   }, [])
 
-  // Guardar canciones automáticamente
+  // Guardar canciones globalmente
   useEffect(() => {
     if (songs.length > 0) {
-      localStorage.setItem("bandSongs", JSON.stringify(songs))
+      localStorage.setItem("globalBandSongs", JSON.stringify(songs))
     }
   }, [songs])
 
@@ -196,13 +205,14 @@ export default function SongsManager() {
       id: Date.now(),
       ...newSong,
       lastUpdated: new Date().toISOString().split("T")[0],
+      createdBy: currentUser?.name || "Usuario",
       comments: [],
       versions: [
         {
           id: 1,
           version: "v1.0",
           changes: "Versión inicial",
-          author: "Usuario",
+          author: currentUser?.name || "Usuario",
           date: new Date().toISOString().split("T")[0],
         },
       ],
@@ -224,7 +234,11 @@ export default function SongsManager() {
         },
       ],
     }
-    setSongs([...songs, song])
+
+    const updatedSongs = [...songs, song]
+    setSongs(updatedSongs)
+    localStorage.setItem("globalBandSongs", JSON.stringify(updatedSongs))
+
     setNewSong({
       title: "",
       status: "developing",
@@ -250,12 +264,16 @@ export default function SongsManager() {
     if (newComment.trim()) {
       const comment: Comment = {
         id: Date.now(),
-        author: "Emanuel",
+        author: currentUser?.name || "Usuario",
         content: newComment,
         timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
       }
 
-      setSongs(songs.map((song) => (song.id === songId ? { ...song, comments: [...song.comments, comment] } : song)))
+      const updatedSongs = songs.map((song) =>
+        song.id === songId ? { ...song, comments: [...song.comments, comment] } : song,
+      )
+      setSongs(updatedSongs)
+      localStorage.setItem("globalBandSongs", JSON.stringify(updatedSongs))
       setNewComment("")
     }
   }
@@ -291,9 +309,9 @@ export default function SongsManager() {
       }
 
       if (updatedSongs.length === 0) {
-        localStorage.removeItem("bandSongs")
+        localStorage.removeItem("globalBandSongs")
       } else {
-        localStorage.setItem("bandSongs", JSON.stringify(updatedSongs))
+        localStorage.setItem("globalBandSongs", JSON.stringify(updatedSongs))
       }
     }
   }
@@ -464,7 +482,7 @@ export default function SongsManager() {
                   </div>
                 </div>
                 <CardDescription className="text-slate-500">
-                  Actualizado: {song.lastUpdated} • {song.comments.length} comentarios
+                  Actualizado: {song.lastUpdated} • Por: {song.createdBy} • {song.comments.length} comentarios
                 </CardDescription>
               </CardHeader>
               <CardContent>

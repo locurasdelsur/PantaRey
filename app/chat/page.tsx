@@ -28,12 +28,19 @@ interface Channel {
 }
 
 export default function ChatPage() {
-  // Cambiar el estado inicial para que esté vacío
   const [messages, setMessages] = useState<Message[]>([])
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
-  // Cargar mensajes al inicializar
+  // Cargar datos globales compartidos
   useEffect(() => {
-    const savedMessages = localStorage.getItem("bandMessages")
+    // Cargar usuario actual
+    const user = localStorage.getItem("currentUser")
+    if (user) {
+      setCurrentUser(JSON.parse(user))
+    }
+
+    // Cargar mensajes globales
+    const savedMessages = localStorage.getItem("globalBandMessages")
     if (savedMessages) {
       try {
         const parsedMessages = JSON.parse(savedMessages)
@@ -44,10 +51,10 @@ export default function ChatPage() {
     }
   }, [])
 
-  // Guardar mensajes automáticamente
+  // Guardar mensajes globalmente
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem("bandMessages", JSON.stringify(messages))
+      localStorage.setItem("globalBandMessages", JSON.stringify(messages))
     }
   }, [messages])
 
@@ -56,35 +63,35 @@ export default function ChatPage() {
       id: "general",
       name: "General",
       description: "Conversaciones generales de la banda",
-      messageCount: 45,
+      messageCount: 0,
       lastActivity: "2025-01-08 15:30",
     },
     {
       id: "shows",
       name: "Shows y Presentaciones",
       description: "Organización de shows y eventos",
-      messageCount: 23,
+      messageCount: 0,
       lastActivity: "2025-01-08 14:20",
     },
     {
       id: "composicion",
       name: "Composición",
       description: "Ideas y desarrollo de nuevas canciones",
-      messageCount: 67,
+      messageCount: 0,
       lastActivity: "2025-01-08 16:45",
     },
     {
       id: "equipos",
       name: "Equipos y Técnico",
       description: "Discusiones sobre equipos y aspectos técnicos",
-      messageCount: 12,
+      messageCount: 0,
       lastActivity: "2025-01-07 19:15",
     },
     {
       id: "grabacion",
       name: "Grabación",
       description: "Todo sobre sesiones de grabación",
-      messageCount: 34,
+      messageCount: 0,
       lastActivity: "2025-01-08 11:30",
     },
   ])
@@ -92,21 +99,35 @@ export default function ChatPage() {
   const [activeChannel, setActiveChannel] = useState("general")
   const [newMessage, setNewMessage] = useState("")
 
-  const activeChannelData = channels.find((ch) => ch.id === activeChannel)
+  // Calcular contadores reales por canal
+  const getChannelStats = () => {
+    return channels.map((channel) => ({
+      ...channel,
+      messageCount: messages.filter((msg) => msg.channel === channel.id).length,
+      lastActivity:
+        messages
+          .filter((msg) => msg.channel === channel.id)
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]?.timestamp ||
+        channel.lastActivity,
+    }))
+  }
+
+  const channelsWithStats = getChannelStats()
+  const activeChannelData = channelsWithStats.find((ch) => ch.id === activeChannel)
   const channelMessages = messages.filter((msg) => msg.channel === activeChannel)
 
   const handleSendMessage = () => {
     if (newMessage.trim()) {
       const message: Message = {
         id: Date.now(),
-        author: "Tú",
+        author: currentUser?.name || "Usuario",
         content: newMessage,
         timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
         channel: activeChannel,
       }
       const updatedMessages = [...messages, message]
       setMessages(updatedMessages)
-      localStorage.setItem("bandMessages", JSON.stringify(updatedMessages))
+      localStorage.setItem("globalBandMessages", JSON.stringify(updatedMessages))
       setNewMessage("")
     }
   }
@@ -118,16 +139,14 @@ export default function ChatPage() {
     }
   }
 
-  // Agregar función para borrar mensaje
   const deleteMessage = (messageId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar este mensaje?")) {
       const updatedMessages = messages.filter((message) => message.id !== messageId)
       setMessages(updatedMessages)
-      // Actualizar localStorage inmediatamente
       if (updatedMessages.length === 0) {
-        localStorage.removeItem("bandMessages")
+        localStorage.removeItem("globalBandMessages")
       } else {
-        localStorage.setItem("bandMessages", JSON.stringify(updatedMessages))
+        localStorage.setItem("globalBandMessages", JSON.stringify(updatedMessages))
       }
     }
   }
@@ -174,7 +193,7 @@ export default function ChatPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {channels.map((channel) => (
+                  {channelsWithStats.map((channel) => (
                     <button
                       key={channel.id}
                       onClick={() => setActiveChannel(channel.id)}
@@ -226,7 +245,6 @@ export default function ChatPage() {
               <CardContent className="flex-1 overflow-y-auto p-4">
                 <div className="space-y-4">
                   {channelMessages.map((message) => (
-                    // En el JSX, modificar cada mensaje para incluir botón de eliminar:
                     <div key={message.id} className="flex gap-3 group">
                       <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
                         {message.author[0]}
@@ -270,7 +288,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Actions con estadísticas reales */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="shadow-md">
             <CardContent className="p-4">
@@ -290,7 +308,7 @@ export default function ChatPage() {
                 <Hash className="h-8 w-8 text-green-400" />
                 <div>
                   <h3 className="font-medium text-gray-800">Canales Activos</h3>
-                  <p className="text-2xl font-bold text-gray-900">{channels.length}</p>
+                  <p className="text-2xl font-bold text-gray-900">{channelsWithStats.length}</p>
                 </div>
               </div>
             </CardContent>
@@ -301,8 +319,16 @@ export default function ChatPage() {
               <div className="flex items-center gap-3">
                 <Users className="h-8 w-8 text-purple-400" />
                 <div>
-                  <h3 className="font-medium text-gray-800">Miembros Online</h3>
-                  <p className="text-2xl font-bold text-gray-900">3</p>
+                  <h3 className="font-medium text-gray-800">Mensajes Hoy</h3>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {
+                      messages.filter((msg) => {
+                        const msgDate = new Date(msg.timestamp).toDateString()
+                        const today = new Date().toDateString()
+                        return msgDate === today
+                      }).length
+                    }
+                  </p>
                 </div>
               </div>
             </CardContent>

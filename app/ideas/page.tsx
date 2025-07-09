@@ -15,7 +15,20 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Lightbulb, Plus, Play, Pause, Upload, Mic, User, Tag, Trash2 } from "lucide-react"
+import {
+  Lightbulb,
+  Plus,
+  Play,
+  Pause,
+  Upload,
+  Mic,
+  User,
+  Tag,
+  Trash2,
+  Music,
+  MessageCircle,
+  TrendingUp,
+} from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -184,6 +197,26 @@ export default function IdeasPage() {
     return matchesSearch && matchesType && matchesCategory
   })
 
+  const getIdeasStats = () => {
+    const today = new Date().toISOString().split("T")[0]
+    const thisWeek = new Date()
+    thisWeek.setDate(thisWeek.getDate() - 7)
+
+    return {
+      total: ideas.length,
+      riffs: ideas.filter((idea) => idea.type === "riff").length,
+      lyrics: ideas.filter((idea) => idea.type === "lyrics").length,
+      melodies: ideas.filter((idea) => idea.type === "melody").length,
+      concepts: ideas.filter((idea) => idea.type === "concept").length,
+      thisWeek: ideas.filter((idea) => new Date(idea.createdAt) >= thisWeek).length,
+      withAudio: ideas.filter((idea) => idea.audioUrl).length,
+      totalLikes: ideas.reduce((sum, idea) => sum + idea.likes, 0),
+      mostLiked: ideas.reduce((max, idea) => (idea.likes > max ? idea.likes : max), 0),
+    }
+  }
+
+  const ideasStats = getIdeasStats()
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
       <div className="container mx-auto p-6">
@@ -349,6 +382,57 @@ export default function IdeasPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Ideas Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card className="bg-white border border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Lightbulb className="h-6 w-6 text-yellow-500" />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Total Ideas</p>
+                  <p className="text-2xl font-bold text-gray-800">{ideasStats.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white border border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Music className="h-6 w-6 text-blue-500" />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Riffs</p>
+                  <p className="text-2xl font-bold text-gray-800">{ideasStats.riffs}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white border border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <MessageCircle className="h-6 w-6 text-green-500" />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Esta Semana</p>
+                  <p className="text-2xl font-bold text-gray-800">{ideasStats.thisWeek}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white border border-gray-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <TrendingUp className="h-6 w-6 text-purple-500" />
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Total Likes</p>
+                  <p className="text-2xl font-bold text-gray-800">{ideasStats.totalLikes}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Ideas Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
