@@ -1,14 +1,25 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 interface Photo {
   id: number
@@ -34,6 +45,54 @@ export default function PhotosPage() {
 
   const [selectedMonth, setSelectedMonth] = useState("2025-01")
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
+
+  // Agregar estado para el diálogo de subir fotos
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
+  const [newPhotoSession, setNewPhotoSession] = useState({
+    title: "",
+    date: "",
+    location: "",
+    photos: [] as File[],
+  })
+
+  // Agregar función para manejar la subida de archivos
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (files) {
+      const fileArray = Array.from(files)
+      setNewPhotoSession({ ...newPhotoSession, photos: fileArray })
+    }
+  }
+
+  // Agregar función para crear nueva sesión de fotos
+  const handleCreatePhotoSession = () => {
+    if (newPhotoSession.title && newPhotoSession.date && newPhotoSession.photos.length > 0) {
+      const newSession: PhotoSession = {
+        id: Date.now(),
+        title: newPhotoSession.title,
+        date: newPhotoSession.date,
+        location: newPhotoSession.location,
+        photos: newPhotoSession.photos.map((file, index) => ({
+          id: Date.now() + index,
+          url: URL.createObjectURL(file), // En producción esto sería una URL real
+          title: file.name.replace(/\.[^/.]+$/, ""), // Nombre sin extensión
+          date: newPhotoSession.date,
+          location: newPhotoSession.location,
+          photographer: "Usuario", // En una app real vendría del usuario logueado
+          tags: ["nueva-sesion"],
+        })),
+      }
+
+      setPhotoSessions([...photoSessions, newSession])
+      setNewPhotoSession({
+        title: "",
+        date: "",
+        location: "",
+        photos: [],
+      })
+      setIsUploadDialogOpen(false)
+    }
+  }
 
   // Agregar función para borrar sesión de fotos
   const deletePhotoSession = (sessionId: number) => {
@@ -81,6 +140,26 @@ export default function PhotosPage() {
     setSelectedPhoto(allPhotos[newIndex])
   }
 
+  // También agregar una función para agregar fotos a sesiones existentes
+  const addPhotosToSession = (sessionId: number, files: File[]) => {
+    const session = photoSessions.find((s) => s.id === sessionId)
+    if (session) {
+      const newPhotos: Photo[] = files.map((file, index) => ({
+        id: Date.now() + index,
+        url: URL.createObjectURL(file),
+        title: file.name.replace(/\.[^/.]+$/, ""),
+        date: session.date,
+        location: session.location,
+        photographer: "Usuario",
+        tags: ["agregada-posteriormente"],
+      }))
+
+      setPhotoSessions(
+        photoSessions.map((s) => (s.id === sessionId ? { ...s, photos: [...s.photos, ...newPhotos] } : s)),
+      )
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
       <div className="container mx-auto p-6">
@@ -103,10 +182,114 @@ export default function PhotosPage() {
             <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
           </div>
 
-          <Button className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg">
-            <Plus className="h-4 w-4 mr-2" />
-            Subir Fotos
-          </Button>
+          {/* Cambiar el botón "Subir Fotos" para que abra el diálogo */}
+          <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg">
+                <Plus className="h-4 w-4 mr-2" />
+                Subir Fotos
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="text-slate-800">Subir Nueva Sesión de Fotos</DialogTitle>
+                <DialogDescription className="text-slate-600">
+                  Crea una nueva sesión y sube las fotos de tu ensayo o presentación
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <Input
+                  placeholder="Título de la sesión (ej: Ensayo - Estudio Central)"
+                  value={newPhotoSession.title}
+                  onChange={(e) => setNewPhotoSession({ ...newPhotoSession, title: e.target.value })}
+                  className="bg-slate-50 border-slate-200 text-slate-800"
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="session-date" className="text-slate-700">
+                      Fecha de la sesión
+                    </Label>
+                    <Input
+                      id="session-date"
+                      type="date"
+                      value={newPhotoSession.date}
+                      onChange={(e) => setNewPhotoSession({ ...newPhotoSession, date: e.target.value })}
+                      className="bg-slate-50 border-slate-200 text-slate-800"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="session-location" className="text-slate-700">
+                      Ubicación
+                    </Label>
+                    <Input
+                      id="session-location"
+                      placeholder="Lugar donde se tomaron las fotos"
+                      value={newPhotoSession.location}
+                      onChange={(e) => setNewPhotoSession({ ...newPhotoSession, location: e.target.value })}
+                      className="bg-slate-50 border-slate-200 text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="photo-upload" className="text-slate-700">
+                    Seleccionar fotos
+                  </Label>
+                  <Input
+                    id="photo-upload"
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="bg-slate-50 border-slate-200 text-slate-800"
+                  />
+                  {newPhotoSession.photos.length > 0 && (
+                    <p className="text-sm text-slate-600">
+                      {newPhotoSession.photos.length} foto{newPhotoSession.photos.length !== 1 ? "s" : ""} seleccionada
+                      {newPhotoSession.photos.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                </div>
+
+                {/* Vista previa de las fotos seleccionadas */}
+                {newPhotoSession.photos.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-slate-700">Vista previa</Label>
+                    <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto">
+                      {newPhotoSession.photos.map((file, index) => (
+                        <div key={index} className="relative">
+                          <img
+                            src={URL.createObjectURL(file) || "/placeholder.svg"}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-16 object-cover rounded border"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newPhotos = newPhotoSession.photos.filter((_, i) => i !== index)
+                              setNewPhotoSession({ ...newPhotoSession, photos: newPhotos })
+                            }}
+                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs hover:bg-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleCreatePhotoSession}
+                  disabled={!newPhotoSession.title || !newPhotoSession.date || newPhotoSession.photos.length === 0}
+                  className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
+                >
+                  Crear Sesión de Fotos ({newPhotoSession.photos.length} fotos)
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Month Filter */}
@@ -207,6 +390,31 @@ export default function PhotosPage() {
                     </div>
                   ))}
                 </div>
+                {session.photos.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-600">¿Más fotos de esta sesión?</span>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              addPhotosToSession(session.id, Array.from(e.target.files))
+                              e.target.value = "" // Limpiar el input
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+                        <Button variant="outline" size="sm" className="border-slate-300 text-slate-600 bg-transparent">
+                          <Plus className="h-3 w-3 mr-1" />
+                          Agregar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
