@@ -14,58 +14,31 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Camera,
-  Plus,
-  Calendar,
-  MapPin,
-  ChevronLeft,
-  ChevronRight,
-  Trash2,
-  AlertCircle,
-  Grid3X3,
-  List,
-  Download,
-  Share2,
-  Eye,
-  X,
-} from "lucide-react"
+import { Calendar, MapPin, Trash2, AlertCircle, Download, Eye, Cloud } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-
-interface Photo {
-  id: number
-  url: string
-  title: string
-  date: string
-  location: string
-  photographer: string
-  tags: string[]
-  base64Data?: string
-}
+import { unifiedStorage, type PhotoWithDrive } from "@/lib/unified-storage"
 
 interface PhotoSession {
   id: number
   date: string
   title: string
   location: string
-  photos: Photo[]
+  photos: PhotoWithDrive[]
 }
 
 export default function PhotosPage() {
   const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([])
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
+  const [selectedPhoto, setSelectedPhoto] = useState<PhotoWithDrive | null>(null)
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
   const [uploadError, setUploadError] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedPhotos, setSelectedPhotos] = useState<Set<number>>(new Set())
+  const [currentUser, setCurrentUser] = useState<any>(null)
+
   const [newPhotoSession, setNewPhotoSession] = useState({
     title: "",
     date: "",
@@ -73,50 +46,84 @@ export default function PhotosPage() {
     photos: [] as File[],
   })
 
-  // Cargar datos al inicializar el componente
+  // Cargar datos al inicializar
   useEffect(() => {
-    const savedSessions = localStorage.getItem("bandPhotoSessions")
-    if (savedSessions) {
-      try {
-        const parsedSessions = JSON.parse(savedSessions)
-        setPhotoSessions(parsedSessions)
-      } catch (error) {
-        console.error("Error loading photo sessions:", error)
-      }
+    const user = localStorage.getItem("currentUser")
+    if (user) {
+      setCurrentUser(JSON.parse(user))
     }
+
+    loadPhotos()
   }, [])
 
-  // Guardar datos cada vez que cambien las sesiones
-  useEffect(() => {
-    if (photoSessions.length > 0) {
-      localStorage.setItem("bandPhotoSessions", JSON.stringify(photoSessions))
-    }
-  }, [photoSessions])
+  const loadPhotos = async () => {
+    try {
+      const photos = await unifiedStorage.getPhotos()
 
-  // Función para convertir archivo a base64 con validación
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      if (file.size > 5 * 1024 * 1024) {
-        reject(new Error(`El archivo ${file.name} es demasiado grande. Máximo 5MB.`))
-        return
-      }
+      // Agrupar fotos por sesión (por fecha y ubicación)
+      const sessionsMap = new Map<string, PhotoSession>()
 
-      if (!file.type.startsWith("image/")) {
-        reject(new Error(`${file.name} no es un archivo de imagen válido.`))
-        return
-      }
-
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => {
-        try {
-          resolve(reader.result as string)
-        } catch (error) {
-          reject(new Error(`Error procesando ${file.name}`))
+      photos.forEach((photo) => {
+        const key = `${photo.date}_${photo.location}`
+        if (!sessionsMap.has(key)) {
+          sessionsMap.set(key, {
+            id: Date.now() + Math.random(),
+            date: photo.date,
+            title: `Sesión ${photo.location}`,
+            location: photo.location,
+            photos: [],
+          })
         }
-      }
-      reader.onerror = () => reject(new Error(`Error leyendo ${file.name}`))
-    })
+        sessionsMap.get(key)!.photos.push(photo)
+      })
+
+      setPhotoSessions(Array.from(sessionsMap.values()))
+    } catch (error) {
+      console.error("Error loading photos:", error)
+    }
+  }
+
+  const handleCreatePhotoSession = async () => {
+    if (!newPhotoSession.title || !newPhotoSession.date || newPhotoSession.photos.length === 0) {
+      setUploadError("Por favor completa todos los campos y selecciona al menos una foto")
+      return
+    }
+
+    setIsProcessing(true)
+    setUploadError("")
+
+    try {
+      const uploadPromises = newPhotoSession.photos.map(async (file, index) => {
+        const photoData = {
+          id: Date.now() + index,
+          title: file.name.replace(/\.[^/.]+$/, ""),
+          date: newPhotoSession.date,
+          location: newPhotoSession.location,
+          photographer: currentUser?.name || "Usuario",
+          tags: ["nueva-sesion"],
+        }
+
+        return await unifiedStorage.uploadPhoto(file, photoData)
+      })
+
+      await Promise.all(uploadPromises)
+
+      // Recargar fotos
+      await loadPhotos()
+
+      setNewPhotoSession({
+        title: "",
+        date: "",
+        location: "",
+        photos: [],
+      })
+      setIsUploadDialogOpen(false)
+    } catch (error) {
+      console.error("Error creating photo session:", error)
+      setUploadError("Error al subir las fotos. Por favor, intenta de nuevo.")
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,8 +139,8 @@ export default function PhotosPage() {
       }
 
       for (const file of fileArray) {
-        if (file.size > 5 * 1024 * 1024) {
-          setUploadError(`${file.name} es demasiado grande (máximo 5MB)`)
+        if (file.size > 10 * 1024 * 1024) {
+          setUploadError(`${file.name} es demasiado grande (máximo 10MB)`)
           return
         }
         if (!file.type.startsWith("image/")) {
@@ -146,269 +153,19 @@ export default function PhotosPage() {
     }
   }
 
-  const handleCreatePhotoSession = async () => {
-    if (!newPhotoSession.title || !newPhotoSession.date || newPhotoSession.photos.length === 0) {
-      setUploadError("Por favor completa todos los campos y selecciona al menos una foto")
-      return
-    }
-
-    setIsProcessing(true)
-    setUploadError("")
-
-    try {
-      const photosWithBase64: Photo[] = []
-
-      for (let i = 0; i < newPhotoSession.photos.length; i++) {
-        const file = newPhotoSession.photos[i]
-        try {
-          const base64Data = await fileToBase64(file)
-          photosWithBase64.push({
-            id: Date.now() + i,
-            url: base64Data,
-            title: file.name.replace(/\.[^/.]+$/, ""),
-            date: newPhotoSession.date,
-            location: newPhotoSession.location,
-            photographer: "Usuario",
-            tags: ["nueva-sesion"],
-            base64Data: base64Data,
-          })
-        } catch (error) {
-          console.error(`Error procesando ${file.name}:`, error)
-          setUploadError(`Error procesando ${file.name}: ${error.message}`)
-          setIsProcessing(false)
-          return
-        }
-      }
-
-      const newSession: PhotoSession = {
-        id: Date.now(),
-        title: newPhotoSession.title,
-        date: newPhotoSession.date,
-        location: newPhotoSession.location,
-        photos: photosWithBase64,
-      }
-
-      setPhotoSessions([...photoSessions, newSession])
-      setNewPhotoSession({
-        title: "",
-        date: "",
-        location: "",
-        photos: [],
-      })
-      setIsUploadDialogOpen(false)
-    } catch (error) {
-      console.error("Error creating photo session:", error)
-      setUploadError("Error al crear la sesión de fotos. Por favor, intenta de nuevo.")
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  const deletePhotoSession = (sessionId: number) => {
-    if (confirm("¿Estás seguro de que quieres eliminar esta sesión de fotos?")) {
-      const updatedSessions = photoSessions.filter((session) => session.id !== sessionId)
-      setPhotoSessions(updatedSessions)
-      if (updatedSessions.length === 0) {
-        localStorage.removeItem("bandPhotoSessions")
-      } else {
-        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
-      }
-    }
-  }
-
-  const deletePhoto = (sessionId: number, photoId: number) => {
+  const deletePhoto = async (photoId: number) => {
     if (confirm("¿Estás seguro de que quieres eliminar esta foto?")) {
-      const updatedSessions = photoSessions
-        .map((session) =>
-          session.id === sessionId
-            ? { ...session, photos: session.photos.filter((photo) => photo.id !== photoId) }
-            : session,
-        )
-        .filter((session) => session.photos.length > 0)
-
-      setPhotoSessions(updatedSessions)
-      if (updatedSessions.length === 0) {
-        localStorage.removeItem("bandPhotoSessions")
-      } else {
-        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
+      try {
+        await unifiedStorage.deletePhoto(photoId)
+        await loadPhotos()
+      } catch (error) {
+        console.error("Error deleting photo:", error)
+        alert("Error al eliminar la foto")
       }
     }
   }
 
-  // Funciones para selección múltiple
-  const togglePhotoSelection = (photoId: number) => {
-    const newSelection = new Set(selectedPhotos)
-    if (newSelection.has(photoId)) {
-      newSelection.delete(photoId)
-    } else {
-      newSelection.add(photoId)
-    }
-    setSelectedPhotos(newSelection)
-  }
-
-  const selectAllPhotos = () => {
-    const allPhotoIds = filteredSessions.flatMap((session) => session.photos.map((photo) => photo.id))
-    setSelectedPhotos(new Set(allPhotoIds))
-  }
-
-  const clearSelection = () => {
-    setSelectedPhotos(new Set())
-    setSelectionMode(false)
-  }
-
-  const deleteSelectedPhotos = () => {
-    if (selectedPhotos.size === 0) return
-
-    if (confirm(`¿Estás seguro de que quieres eliminar ${selectedPhotos.size} fotos seleccionadas?`)) {
-      const updatedSessions = photoSessions
-        .map((session) => ({
-          ...session,
-          photos: session.photos.filter((photo) => !selectedPhotos.has(photo.id)),
-        }))
-        .filter((session) => session.photos.length > 0)
-
-      setPhotoSessions(updatedSessions)
-      setSelectedPhotos(new Set())
-      setSelectionMode(false)
-
-      if (updatedSessions.length === 0) {
-        localStorage.removeItem("bandPhotoSessions")
-      } else {
-        localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
-      }
-    }
-  }
-
-  const generateMonths = () => {
-    const months = []
-    const currentDate = new Date()
-
-    for (let i = 0; i < 12; i++) {
-      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1)
-      const value = date.toISOString().slice(0, 7)
-      const label = date.toLocaleDateString("es-ES", {
-        year: "numeric",
-        month: "long",
-      })
-
-      months.push({
-        value,
-        label: label.charAt(0).toUpperCase() + label.slice(1),
-      })
-    }
-
-    return months
-  }
-
-  const months = generateMonths()
-
-  const getMonthStats = () => {
-    const stats: { [key: string]: number } = {}
-
-    photoSessions.forEach((session) => {
-      const monthKey = session.date.slice(0, 7)
-      stats[monthKey] = (stats[monthKey] || 0) + session.photos.length
-    })
-
-    return stats
-  }
-
-  const monthStats = getMonthStats()
   const filteredSessions = photoSessions.filter((session) => session.date.startsWith(selectedMonth))
-  const allPhotos = photoSessions.flatMap((session) => session.photos)
-  const currentPhotoIndex = selectedPhoto ? allPhotos.findIndex((p) => p.id === selectedPhoto.id) : -1
-
-  const navigatePhoto = (direction: "prev" | "next") => {
-    if (currentPhotoIndex === -1) return
-
-    let newIndex
-    if (direction === "prev") {
-      newIndex = currentPhotoIndex > 0 ? currentPhotoIndex - 1 : allPhotos.length - 1
-    } else {
-      newIndex = currentPhotoIndex < allPhotos.length - 1 ? currentPhotoIndex + 1 : 0
-    }
-
-    setSelectedPhoto(allPhotos[newIndex])
-  }
-
-  const navigateMonth = (direction: "prev" | "next") => {
-    const currentIndex = months.findIndex((m) => m.value === selectedMonth)
-    if (currentIndex === -1) return
-
-    let newIndex
-    if (direction === "prev") {
-      newIndex = currentIndex < months.length - 1 ? currentIndex + 1 : 0
-    } else {
-      newIndex = currentIndex > 0 ? currentIndex - 1 : months.length - 1
-    }
-
-    setSelectedMonth(months[newIndex].value)
-  }
-
-  const addPhotosToSession = async (sessionId: number, files: File[]) => {
-    const session = photoSessions.find((s) => s.id === sessionId)
-    if (!session) return
-
-    setIsProcessing(true)
-    try {
-      const newPhotosWithBase64: Photo[] = []
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        try {
-          const base64Data = await fileToBase64(file)
-          newPhotosWithBase64.push({
-            id: Date.now() + i,
-            url: base64Data,
-            title: file.name.replace(/\.[^/.]+$/, ""),
-            date: session.date,
-            location: session.location,
-            photographer: "Usuario",
-            tags: ["agregada-posteriormente"],
-            base64Data: base64Data,
-          })
-        } catch (error) {
-          console.error(`Error adding photo ${file.name}:`, error)
-          alert(`Error al agregar ${file.name}: ${error.message}`)
-          setIsProcessing(false)
-          return
-        }
-      }
-
-      const updatedSessions = photoSessions.map((s) =>
-        s.id === sessionId ? { ...s, photos: [...s.photos, ...newPhotosWithBase64] } : s,
-      )
-
-      setPhotoSessions(updatedSessions)
-      localStorage.setItem("bandPhotoSessions", JSON.stringify(updatedSessions))
-    } catch (error) {
-      console.error("Error adding photos:", error)
-      alert("Error al agregar las fotos. Por favor, intenta de nuevo.")
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  const getPhotoStats = () => {
-    const totalPhotos = photoSessions.reduce((sum, session) => sum + session.photos.length, 0)
-    const thisMonth = photoSessions.filter((session) => session.date.startsWith(selectedMonth))
-    const thisMonthPhotos = thisMonth.reduce((sum, session) => sum + session.photos.length, 0)
-
-    const today = new Date().toISOString().split("T")[0]
-    const thisWeek = new Date()
-    thisWeek.setDate(thisWeek.getDate() - 7)
-
-    return {
-      totalSessions: photoSessions.length,
-      totalPhotos: totalPhotos,
-      thisMonth: thisMonthPhotos,
-      thisMonthSessions: thisMonth.length,
-      thisWeek: photoSessions.filter((session) => new Date(session.date) >= thisWeek).length,
-      averagePerSession: photoSessions.length > 0 ? Math.round(totalPhotos / photoSessions.length) : 0,
-    }
-  }
-
-  const photoStats = getPhotoStats()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
@@ -425,8 +182,8 @@ export default function PhotosPage() {
             <div className="flex items-center gap-4 mb-4">
               <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
               <div>
-                <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">Galería de Fotos</h1>
-                <p className="text-slate-600">Momentos capturados de ensayos y presentaciones</p>
+                <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">Galería Compartida</h1>
+                <p className="text-slate-600">Fotos almacenadas en Google Drive - Visibles para todos</p>
               </div>
             </div>
             <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
@@ -436,15 +193,18 @@ export default function PhotosPage() {
             <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-lg">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Subir Fotos
+                  <Cloud className="h-4 w-4 mr-2" />
+                  Subir a Drive
                 </Button>
               </DialogTrigger>
               <DialogContent className="bg-white border-slate-200 text-slate-800 max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle className="text-slate-800">Subir Nueva Sesión de Fotos</DialogTitle>
+                  <DialogTitle className="text-slate-800 flex items-center gap-2">
+                    <Cloud className="h-5 w-5 text-blue-500" />
+                    Subir Fotos a Google Drive
+                  </DialogTitle>
                   <DialogDescription className="text-slate-600">
-                    Crea una nueva sesión y sube las fotos de tu ensayo o presentación
+                    Las fotos se guardarán en Google Drive y serán visibles para todos los miembros
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -491,7 +251,7 @@ export default function PhotosPage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="photo-upload" className="text-slate-700">
-                      Seleccionar fotos (máximo 10 archivos, 5MB cada uno)
+                      Seleccionar fotos (máximo 10 archivos, 10MB cada uno)
                     </Label>
                     <Input
                       id="photo-upload"
@@ -505,8 +265,7 @@ export default function PhotosPage() {
                     {newPhotoSession.photos.length > 0 && (
                       <p className="text-sm text-slate-600">
                         {newPhotoSession.photos.length} foto{newPhotoSession.photos.length !== 1 ? "s" : ""}{" "}
-                        seleccionada
-                        {newPhotoSession.photos.length !== 1 ? "s" : ""}
+                        seleccionada{newPhotoSession.photos.length !== 1 ? "s" : ""}
                       </p>
                     )}
                   </div>
@@ -540,6 +299,17 @@ export default function PhotosPage() {
                     </div>
                   )}
 
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Cloud className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-800">Almacenamiento en Google Drive</span>
+                    </div>
+                    <p className="text-xs text-blue-700">
+                      Las fotos se subirán a Google Drive y serán accesibles para todos los miembros de la banda. Se
+                      requiere autorización de Google Drive la primera vez.
+                    </p>
+                  </div>
+
                   <Button
                     onClick={handleCreatePhotoSession}
                     disabled={
@@ -550,156 +320,20 @@ export default function PhotosPage() {
                     }
                     className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
                   >
-                    {isProcessing ? "Procesando..." : `Crear Sesión de Fotos (${newPhotoSession.photos.length} fotos)`}
+                    {isProcessing ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                        Subiendo a Drive...
+                      </div>
+                    ) : (
+                      `Subir ${newPhotoSession.photos.length} fotos a Drive`
+                    )}
                   </Button>
                 </div>
               </DialogContent>
             </Dialog>
           </div>
         </div>
-
-        {/* Controls */}
-        <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg mb-6">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => navigateMonth("prev")} className="h-8 w-8 p-0">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-
-                <div className="flex items-center gap-4">
-                  <Camera className="h-5 w-5 text-slate-600" />
-                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                    <SelectTrigger className="w-[200px] bg-slate-50 border-slate-200">
-                      <SelectValue placeholder="Seleccionar mes" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200">
-                      {months.map((month) => (
-                        <SelectItem key={month.value} value={month.value}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{month.label}</span>
-                            {monthStats[month.value] && (
-                              <Badge variant="outline" className="ml-2 text-xs">
-                                {monthStats[month.value]}
-                              </Badge>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedMonth === new Date().toISOString().slice(0, 7) && (
-                    <Badge className="bg-green-500 text-white">Mes actual</Badge>
-                  )}
-                </div>
-
-                <Button variant="outline" size="sm" onClick={() => navigateMonth("next")} className="h-8 w-8 p-0">
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-4">
-                {/* View Mode Toggle */}
-                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                  <Button
-                    variant={viewMode === "grid" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("grid")}
-                    className="h-7 px-2"
-                  >
-                    <Grid3X3 className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant={viewMode === "list" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("list")}
-                    className="h-7 px-2"
-                  >
-                    <List className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                {/* Selection Mode */}
-                <Button
-                  variant={selectionMode ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setSelectionMode(!selectionMode)
-                    if (selectionMode) {
-                      setSelectedPhotos(new Set())
-                    }
-                  }}
-                  className="h-7"
-                >
-                  {selectionMode ? "Cancelar" : "Seleccionar"}
-                </Button>
-
-                <div className="flex items-center gap-4">
-                  <Badge variant="outline" className="text-slate-600 border-slate-300">
-                    {photoStats.thisMonth} fotos este mes
-                  </Badge>
-                  <Badge variant="outline" className="text-slate-600 border-slate-300">
-                    {photoStats.thisMonthSessions} sesiones
-                  </Badge>
-                  <Badge variant="outline" className="text-slate-600 border-slate-300">
-                    {photoStats.totalPhotos} fotos total
-                  </Badge>
-                </div>
-
-                <Badge variant="outline" className="text-slate-600 border-slate-300">
-                  {filteredSessions.reduce((total, session) => total + session.photos.length, 0)} fotos
-                </Badge>
-                <Badge variant="outline" className="text-slate-600 border-slate-300">
-                  {filteredSessions.length} sesiones
-                </Badge>
-              </div>
-            </div>
-
-            {/* Selection Actions */}
-            {selectionMode && (
-              <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-slate-600">
-                    {selectedPhotos.size} foto{selectedPhotos.size !== 1 ? "s" : ""} seleccionada
-                    {selectedPhotos.size !== 1 ? "s" : ""}
-                  </span>
-                  {selectedPhotos.size > 0 && (
-                    <Button variant="ghost" size="sm" onClick={clearSelection} className="h-6 text-xs">
-                      <X className="h-3 w-3 mr-1" />
-                      Limpiar
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={selectAllPhotos} className="h-7 bg-transparent">
-                    Seleccionar todas
-                  </Button>
-                  {selectedPhotos.size > 0 && (
-                    <>
-                      <Button variant="outline" size="sm" className="h-7 bg-transparent">
-                        <Download className="h-3 w-3 mr-1" />
-                        Descargar
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-7 bg-transparent">
-                        <Share2 className="h-3 w-3 mr-1" />
-                        Compartir
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={deleteSelectedPhotos}
-                        className="h-7 text-red-600 hover:text-red-700 bg-transparent"
-                      >
-                        <Trash2 className="h-3 w-3 mr-1" />
-                        Eliminar
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Photo Sessions */}
         <div className="space-y-8">
@@ -709,7 +343,7 @@ export default function PhotosPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-slate-800 flex items-center gap-2">
-                      <Camera className="h-5 w-5 text-purple-600" />
+                      <Cloud className="h-5 w-5 text-blue-600" />
                       {session.title}
                     </CardTitle>
                     <CardDescription className="text-slate-600 flex items-center gap-4 mt-2">
@@ -730,141 +364,47 @@ export default function PhotosPage() {
                   </div>
                   <div className="flex gap-2">
                     <Badge variant="outline" className="text-slate-600 border-slate-300">
-                      {session.photos.length} fotos
+                      {session.photos.length} fotos en Drive
                     </Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deletePhotoSession(session.id)}
-                      className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Grid View */}
-                {viewMode === "grid" && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                    {session.photos.map((photo) => (
-                      <div key={photo.id} className="relative group cursor-pointer">
-                        {selectionMode && (
-                          <div className="absolute top-2 left-2 z-10">
-                            <Checkbox
-                              checked={selectedPhotos.has(photo.id)}
-                              onCheckedChange={() => togglePhotoSelection(photo.id)}
-                              className="bg-white/80 border-2"
-                            />
-                          </div>
-                        )}
-                        <img
-                          src={photo.url || "/placeholder.svg"}
-                          alt={photo.title}
-                          className="w-full h-32 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-all duration-200"
-                          onClick={() => !selectionMode && setSelectedPhoto(photo)}
-                        />
-                        {!selectionMode && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              deletePhoto(session.id, photo.id)
-                            }}
-                            className="absolute top-1 right-1 h-6 w-6 p-0 bg-red-500 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        )}
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-center">
-                            <Eye className="h-4 w-4 mx-auto mb-1" />
-                            <p className="text-xs font-medium">{photo.title}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* List View */}
-                {viewMode === "list" && (
-                  <div className="space-y-3">
-                    {session.photos.map((photo) => (
-                      <div
-                        key={photo.id}
-                        className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                  {session.photos.map((photo) => (
+                    <div key={photo.id} className="relative group cursor-pointer">
+                      <img
+                        src={photo.thumbnailUrl || photo.driveUrl}
+                        alt={photo.title}
+                        className="w-full h-32 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-all duration-200"
+                        onClick={() => setSelectedPhoto(photo)}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deletePhoto(photo.id)
+                        }}
+                        className="absolute top-1 right-1 h-6 w-6 p-0 bg-red-500 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
                       >
-                        {selectionMode && (
-                          <Checkbox
-                            checked={selectedPhotos.has(photo.id)}
-                            onCheckedChange={() => togglePhotoSelection(photo.id)}
-                          />
-                        )}
-                        <img
-                          src={photo.url || "/placeholder.svg"}
-                          alt={photo.title}
-                          className="w-16 h-16 object-cover rounded-lg cursor-pointer"
-                          onClick={() => !selectionMode && setSelectedPhoto(photo)}
-                        />
-                        <div className="flex-1">
-                          <h4 className="font-medium text-slate-800">{photo.title}</h4>
-                          <p className="text-sm text-slate-600">por {photo.photographer}</p>
-                          <div className="flex gap-1 mt-1">
-                            {photo.tags.map((tag, index) => (
-                              <Badge key={index} variant="outline" className="text-xs">
-                                #{tag}
-                              </Badge>
-                            ))}
-                          </div>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-center">
+                          <Eye className="h-4 w-4 mx-auto mb-1" />
+                          <p className="text-xs font-medium">{photo.title}</p>
                         </div>
-                        {!selectionMode && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deletePhoto(session.id, photo.id)}
-                            className="text-red-400 hover:text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                {session.photos.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-slate-200">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">¿Más fotos de esta sesión?</span>
-                      <div className="relative">
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          onChange={(e) => {
-                            if (e.target.files) {
-                              addPhotosToSession(session.id, Array.from(e.target.files))
-                              e.target.value = ""
-                            }
-                          }}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          disabled={isProcessing}
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-slate-300 text-slate-600 bg-transparent"
-                          disabled={isProcessing}
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          {isProcessing ? "Procesando..." : "Agregar"}
-                        </Button>
+                      <div className="absolute bottom-1 left-1">
+                        <Badge className="bg-blue-500 text-white text-xs">
+                          <Cloud className="h-2 w-2 mr-1" />
+                          Drive
+                        </Badge>
                       </div>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -873,8 +413,9 @@ export default function PhotosPage() {
         {filteredSessions.length === 0 && (
           <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
             <CardContent className="p-8 text-center">
-              <Camera className="h-12 w-12 text-slate-500 mx-auto mb-4" />
+              <Cloud className="h-12 w-12 text-slate-500 mx-auto mb-4" />
               <p className="text-slate-500">No hay fotos para el mes seleccionado</p>
+              <p className="text-sm text-slate-400 mt-2">Las fotos se almacenan en Google Drive</p>
             </CardContent>
           </Card>
         )}
@@ -884,7 +425,10 @@ export default function PhotosPage() {
           <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
             <DialogContent className="max-w-4xl bg-white border-slate-200">
               <DialogHeader>
-                <DialogTitle className="text-slate-800">{selectedPhoto.title}</DialogTitle>
+                <DialogTitle className="text-slate-800 flex items-center gap-2">
+                  <Cloud className="h-5 w-5 text-blue-500" />
+                  {selectedPhoto.title}
+                </DialogTitle>
                 <DialogDescription className="text-slate-600">
                   {new Date(selectedPhoto.date + "T00:00:00").toLocaleDateString("es-ES", {
                     weekday: "long",
@@ -897,26 +441,16 @@ export default function PhotosPage() {
               </DialogHeader>
               <div className="relative">
                 <img
-                  src={selectedPhoto.url || "/placeholder.svg"}
+                  src={selectedPhoto.driveUrl || "/placeholder.svg"}
                   alt={selectedPhoto.title}
                   className="w-full max-h-96 object-contain rounded-lg"
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigatePhoto("prev")}
-                  className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-white/80 hover:bg-white"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigatePhoto("next")}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white/80 hover:bg-white"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+                <div className="absolute top-2 right-2">
+                  <Badge className="bg-blue-500 text-white">
+                    <Cloud className="h-3 w-3 mr-1" />
+                    Google Drive
+                  </Badge>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 mt-4">
                 {selectedPhoto.tags.map((tag, index) => (
@@ -924,6 +458,15 @@ export default function PhotosPage() {
                     #{tag}
                   </Badge>
                 ))}
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  onClick={() => window.open(selectedPhoto.driveUrl, "_blank")}
+                  className="bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Ver en Drive
+                </Button>
               </div>
             </DialogContent>
           </Dialog>

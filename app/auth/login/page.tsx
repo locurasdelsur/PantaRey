@@ -8,10 +8,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Mail, Lock } from "lucide-react"
+import { Eye, EyeOff, Mail, Lock, Cloud } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+import { driveStorage } from "@/lib/google-drive-storage"
+
+interface User {
+  id: number
+  name: string
+  email: string
+  password: string
+  instrument: string
+  joinDate: string
+  avatar: string
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -19,43 +30,70 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(true)
+  const [initStatus, setInitStatus] = useState("Conectando con Google Drive...")
   const router = useRouter()
 
-  // Inicializar usuarios demo solo si no existen
+  // Inicializar Google Drive y usuarios demo
   useEffect(() => {
-    const existingUsers = localStorage.getItem("bandUsers")
-    if (!existingUsers) {
-      const demoUsers = [
-        {
-          id: 1,
-          name: "Cholo",
-          email: "cholo@pantarei.com",
-          password: "123456",
-          instrument: "bajo",
-          joinDate: "2024-01-01",
-          avatar: "https://ui-avatars.com/api/?name=Cholo&background=f59e0b&color=fff",
-        },
-        {
-          id: 2,
-          name: "Fernando",
-          email: "fernando@pantarei.com",
-          password: "123456",
-          instrument: "guitarra",
-          joinDate: "2024-01-01",
-          avatar: "https://ui-avatars.com/api/?name=Fernando&background=f59e0b&color=fff",
-        },
-        {
-          id: 3,
-          name: "Emanuel",
-          email: "emanuel@pantarei.com",
-          password: "123456",
-          instrument: "guitarra",
-          joinDate: "2024-01-01",
-          avatar: "https://ui-avatars.com/api/?name=Emanuel&background=f59e0b&color=fff",
-        },
-      ]
-      localStorage.setItem("bandUsers", JSON.stringify(demoUsers))
+    const initializeSystem = async () => {
+      try {
+        setIsInitializing(true)
+        setInitStatus("Conectando con Google Drive...")
+
+        // Inicializar Google Drive
+        await driveStorage.initialize()
+        setInitStatus("Cargando usuarios...")
+
+        // Cargar o crear usuarios demo
+        let users = await driveStorage.loadData("users.json")
+
+        if (!users || users.length === 0) {
+          setInitStatus("Creando usuarios demo...")
+          users = [
+            {
+              id: 1,
+              name: "Cholo",
+              email: "cholo@pantarei.com",
+              password: "123456",
+              instrument: "bajo",
+              joinDate: "2024-01-01",
+              avatar: "https://ui-avatars.com/api/?name=Cholo&background=f59e0b&color=fff",
+            },
+            {
+              id: 2,
+              name: "Fernando",
+              email: "fernando@pantarei.com",
+              password: "123456",
+              instrument: "guitarra",
+              joinDate: "2024-01-01",
+              avatar: "https://ui-avatars.com/api/?name=Fernando&background=f59e0b&color=fff",
+            },
+            {
+              id: 3,
+              name: "Emanuel",
+              email: "emanuel@pantarei.com",
+              password: "123456",
+              instrument: "guitarra",
+              joinDate: "2024-01-01",
+              avatar: "https://ui-avatars.com/api/?name=Emanuel&background=f59e0b&color=fff",
+            },
+          ]
+
+          await driveStorage.saveData("users.json", users)
+          setInitStatus("Sistema inicializado correctamente")
+        }
+
+        setInitStatus("¡Listo para usar!")
+        setTimeout(() => setIsInitializing(false), 1000)
+      } catch (error) {
+        console.error("Error inicializando sistema:", error)
+        setError("Error conectando con Google Drive. Verifica tu conexión y permisos.")
+        setIsInitializing(false)
+      }
     }
+
+    initializeSystem()
   }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -63,10 +101,9 @@ export default function LoginPage() {
     setIsLoading(true)
     setError("")
 
-    // Simular autenticación
-    setTimeout(() => {
-      const users = JSON.parse(localStorage.getItem("bandUsers") || "[]")
-      const user = users.find((u: any) => u.email === email && u.password === password)
+    try {
+      const users = await driveStorage.loadData("users.json")
+      const user = users?.find((u: User) => u.email === email && u.password === password)
 
       if (user) {
         localStorage.setItem("currentUser", JSON.stringify(user))
@@ -74,8 +111,33 @@ export default function LoginPage() {
       } else {
         setError("Email o contraseña incorrectos")
       }
-      setIsLoading(false)
-    }, 1000)
+    } catch (error) {
+      console.error("Error en login:", error)
+      setError("Error al iniciar sesión. Verifica tu conexión a Google Drive.")
+    }
+
+    setIsLoading(false)
+  }
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50 flex items-center justify-center p-4">
+        <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-xl max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
+            </div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">Inicializando Sistema</h3>
+            <p className="text-slate-600 text-sm">{initStatus}</p>
+            <div className="flex items-center justify-center gap-2 mt-4 text-blue-600">
+              <Cloud className="h-4 w-4" />
+              <span className="text-xs">Google Drive</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -87,14 +149,17 @@ export default function LoginPage() {
             <Image src="/logo.png" alt="Panta Rei Project" width={80} height={80} className="drop-shadow-lg" />
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">Panta Rei Project</h1>
-          <p className="text-slate-600">Inicia sesión para acceder</p>
+          <p className="text-slate-600 flex items-center justify-center gap-2">
+            <Cloud className="h-4 w-4 text-blue-500" />
+            Almacenado en Google Drive
+          </p>
         </div>
 
         <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-xl">
           <CardHeader className="space-y-1 pb-6">
             <CardTitle className="text-2xl text-center text-slate-800">Iniciar Sesión</CardTitle>
             <CardDescription className="text-center text-slate-600">
-              Ingresa tus credenciales para continuar
+              Accede a tu cuenta sincronizada con Google Drive
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -153,7 +218,17 @@ export default function LoginPage() {
                 className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white"
                 disabled={isLoading}
               >
-                {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Conectando...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Cloud className="h-4 w-4" />
+                    Iniciar Sesión
+                  </div>
+                )}
               </Button>
             </form>
 
@@ -163,6 +238,22 @@ export default function LoginPage() {
                 <Link href="/auth/register" className="text-amber-600 hover:text-amber-700 font-medium">
                   Regístrate aquí
                 </Link>
+              </p>
+            </div>
+
+            {/* Información de credenciales demo */}
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Cloud className="h-4 w-4 text-blue-600" />
+                <p className="text-sm text-blue-800 font-medium">Credenciales de prueba:</p>
+              </div>
+              <div className="text-xs text-blue-700 space-y-1">
+                <p>• cholo@pantarei.com / 123456</p>
+                <p>• fernando@pantarei.com / 123456</p>
+                <p>• emanuel@pantarei.com / 123456</p>
+              </div>
+              <p className="text-xs text-blue-600 mt-2">
+                Todos los datos se sincronizan automáticamente con Google Drive
               </p>
             </div>
           </CardContent>

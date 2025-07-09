@@ -9,10 +9,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, EyeOff, User, Mail, Lock, Guitar } from "lucide-react"
+import { Eye, EyeOff, User, Mail, Lock, Guitar, Cloud } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+import { driveDataManager } from "@/lib/drive-data-manager"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -54,11 +55,12 @@ export default function RegisterPage() {
       return
     }
 
-    // Simular registro
-    setTimeout(() => {
-      const users = JSON.parse(localStorage.getItem("bandUsers") || "[]")
+    try {
+      // Cargar usuarios existentes desde Google Drive
+      const users = await driveDataManager.getUsers()
 
-      if (users.find((u: any) => u.email === formData.email)) {
+      // Verificar si el email ya existe
+      if (users.find((u) => u.email === formData.email)) {
         setError("Ya existe un usuario con este email")
         setIsLoading(false)
         return
@@ -74,12 +76,19 @@ export default function RegisterPage() {
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=f59e0b&color=fff`,
       }
 
-      users.push(newUser)
-      localStorage.setItem("bandUsers", JSON.stringify(users))
+      // Agregar usuario a Google Drive
+      await driveDataManager.addUser(newUser)
+
+      // Guardar usuario actual
       localStorage.setItem("currentUser", JSON.stringify(newUser))
 
       router.push("/")
-    }, 1000)
+    } catch (error) {
+      console.error("Error en registro:", error)
+      setError("Error al crear la cuenta. Verifica tu conexión a Google Drive.")
+    }
+
+    setIsLoading(false)
   }
 
   return (
@@ -91,13 +100,18 @@ export default function RegisterPage() {
             <Image src="/logo.png" alt="Panta Rei Project" width={80} height={80} className="drop-shadow-lg" />
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">Panta Rei Project</h1>
-          <p className="text-slate-600">Únete a la banda</p>
+          <p className="text-slate-600 flex items-center justify-center gap-2">
+            <Cloud className="h-4 w-4 text-blue-500" />
+            Únete a la banda
+          </p>
         </div>
 
         <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-xl">
           <CardHeader className="space-y-1 pb-6">
             <CardTitle className="text-2xl text-center text-slate-800">Crear Cuenta</CardTitle>
-            <CardDescription className="text-center text-slate-600">Completa tus datos para unirte</CardDescription>
+            <CardDescription className="text-center text-slate-600">
+              Tu cuenta se sincronizará con Google Drive
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleRegister} className="space-y-4">
@@ -222,7 +236,17 @@ export default function RegisterPage() {
                 className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
                 disabled={isLoading}
               >
-                {isLoading ? "Creando cuenta..." : "Crear Cuenta"}
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Guardando en Drive...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Cloud className="h-4 w-4" />
+                    Crear Cuenta
+                  </div>
+                )}
               </Button>
             </form>
 
@@ -232,6 +256,17 @@ export default function RegisterPage() {
                 <Link href="/auth/login" className="text-emerald-600 hover:text-emerald-700 font-medium">
                   Inicia sesión aquí
                 </Link>
+              </p>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <Cloud className="h-4 w-4 text-blue-600" />
+                <span className="text-xs font-medium text-blue-800">Almacenamiento en Google Drive</span>
+              </div>
+              <p className="text-xs text-blue-700">
+                Tu cuenta y todos los datos se guardarán automáticamente en Google Drive y serán accesibles para todos
+                los miembros.
               </p>
             </div>
           </CardContent>
