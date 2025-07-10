@@ -2,10 +2,6 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { AuthGuard } from "@/components/auth-guard"
-import { DriveConnectionGuard } from "@/components/drive-connection-guard"
-import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -23,14 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <AuthGuard>
-            <DriveConnectionGuard>{children}</DriveConnectionGuard>
-          </AuthGuard>
-          <Toaster />
-        </ThemeProvider>
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   )
 }
