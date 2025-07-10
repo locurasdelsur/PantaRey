@@ -221,13 +221,11 @@ export default function RegisterPage() {
                   <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="name"
-                    name="name"
                     type="text"
                     placeholder="Tu nombre"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="pl-10 bg-slate-50 border-slate-200"
-                    autoComplete="name"
                     required
                     disabled={!credentialsValid}
                   />
@@ -242,13 +240,11 @@ export default function RegisterPage() {
                   <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="email"
-                    name="email"
                     type="email"
                     placeholder="tu@email.com"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="pl-10 bg-slate-50 border-slate-200"
-                    autoComplete="email"
                     required
                     disabled={!credentialsValid}
                   />
@@ -265,7 +261,6 @@ export default function RegisterPage() {
                     value={formData.instrument}
                     onValueChange={(value) => setFormData({ ...formData, instrument: value })}
                     disabled={!credentialsValid}
-                    name="instrument"
                   >
                     <SelectTrigger className="pl-10 bg-slate-50 border-slate-200">
                       <SelectValue placeholder="Selecciona tu instrumento" />
@@ -289,13 +284,11 @@ export default function RegisterPage() {
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="password"
-                    name="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="pl-10 pr-10 bg-slate-50 border-slate-200"
-                    autoComplete="new-password"
                     required
                     disabled={!credentialsValid}
                   />
@@ -304,7 +297,6 @@ export default function RegisterPage() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
                     disabled={!credentialsValid}
-                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -319,13 +311,11 @@ export default function RegisterPage() {
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="confirmPassword"
-                    name="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={formData.confirmPassword}
                     onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                     className="pl-10 pr-10 bg-slate-50 border-slate-200"
-                    autoComplete="new-password"
                     required
                     disabled={!credentialsValid}
                   />
@@ -334,7 +324,6 @@ export default function RegisterPage() {
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
                     disabled={!credentialsValid}
-                    aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
                     {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>

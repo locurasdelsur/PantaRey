@@ -114,24 +114,29 @@ interface Version {
 }
 
 class DriveDataManager {
-  // Verificar conexión antes de cualquier operación
-  private async ensureDriveConnected(): Promise<void> {
-    if (!driveStorage.isConnected()) {
-      throw new Error(
-        "❌ Google Drive no está conectado. Por favor, recarga la página y autoriza el acceso a Google Drive.",
-      )
-    }
+  // Usuarios
+  async getUsers(): Promise<User[]> {
+    const users = await driveStorage.loadData("users.json")
+    return users || []
+  }
+
+  async saveUsers(users: User[]): Promise<void> {
+    await driveStorage.saveData("users.json", users)
+  }
+
+  async addUser(user: User): Promise<void> {
+    const users = await this.getUsers()
+    users.push(user)
+    await this.saveUsers(users)
   }
 
   // Canciones
   async getSongs(): Promise<Song[]> {
-    await this.ensureDriveConnected()
     const songs = await driveStorage.loadData("songs.json")
     return songs || []
   }
 
   async saveSongs(songs: Song[]): Promise<void> {
-    await this.ensureDriveConnected()
     await driveStorage.saveData("songs.json", songs)
   }
 
@@ -181,8 +186,6 @@ class DriveDataManager {
 
   // Grabaciones de audio
   async uploadSongRecording(file: File, songId: number, recordingData: Omit<Recording, "driveFileId">): Promise<void> {
-    await this.ensureDriveConnected()
-
     const folderIds = driveStorage.getFolderIds()
     const fileName = `${recordingData.name}_${Date.now()}.${file.name.split(".").pop()}`
     const fileId = await driveStorage.uploadFile(file, fileName, folderIds.audio)
@@ -201,8 +204,6 @@ class DriveDataManager {
   }
 
   async uploadSongCover(file: File, songId: number): Promise<void> {
-    await this.ensureDriveConnected()
-
     const folderIds = driveStorage.getFolderIds()
     const fileName = `cover_${songId}_${Date.now()}.${file.name.split(".").pop()}`
     const fileId = await driveStorage.uploadFile(file, fileName, folderIds.covers)
@@ -226,19 +227,15 @@ class DriveDataManager {
 
   // Fotos
   async getPhotoSessions(): Promise<PhotoSession[]> {
-    await this.ensureDriveConnected()
     const sessions = await driveStorage.loadData("photo-sessions.json")
     return sessions || []
   }
 
   async savePhotoSessions(sessions: PhotoSession[]): Promise<void> {
-    await this.ensureDriveConnected()
     await driveStorage.saveData("photo-sessions.json", sessions)
   }
 
   async uploadPhotos(files: File[], sessionData: Omit<PhotoSession, "photos">): Promise<void> {
-    await this.ensureDriveConnected()
-
     const folderIds = driveStorage.getFolderIds()
     const photos: Photo[] = []
 
@@ -297,49 +294,41 @@ class DriveDataManager {
 
   // Tareas
   async getTasks(): Promise<Task[]> {
-    await this.ensureDriveConnected()
     const tasks = await driveStorage.loadData("tasks.json")
     return tasks || []
   }
 
   async saveTasks(tasks: Task[]): Promise<void> {
-    await this.ensureDriveConnected()
     await driveStorage.saveData("tasks.json", tasks)
   }
 
   // Eventos
   async getEvents(): Promise<Event[]> {
-    await this.ensureDriveConnected()
     const events = await driveStorage.loadData("events.json")
     return events || []
   }
 
   async saveEvents(events: Event[]): Promise<void> {
-    await this.ensureDriveConnected()
     await driveStorage.saveData("events.json", events)
   }
 
   // Mensajes
   async getMessages(): Promise<Message[]> {
-    await this.ensureDriveConnected()
     const messages = await driveStorage.loadData("messages.json")
     return messages || []
   }
 
   async saveMessages(messages: Message[]): Promise<void> {
-    await this.ensureDriveConnected()
     await driveStorage.saveData("messages.json", messages)
   }
 
   // Ideas
   async getIdeas(): Promise<Idea[]> {
-    await this.ensureDriveConnected()
     const ideas = await driveStorage.loadData("ideas.json")
     return ideas || []
   }
 
   async saveIdeas(ideas: Idea[]): Promise<void> {
-    await this.ensureDriveConnected()
     await driveStorage.saveData("ideas.json", ideas)
   }
 
@@ -350,11 +339,6 @@ class DriveDataManager {
 
   getThumbnailUrl(fileId: string, size = 400): string {
     return driveStorage.getThumbnailUrl(fileId, size)
-  }
-
-  // Verificar estado de conexión
-  isConnected(): boolean {
-    return driveStorage.isConnected()
   }
 }
 

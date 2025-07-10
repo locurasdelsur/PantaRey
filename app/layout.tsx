@@ -6,9 +6,8 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Panta Rei Project - Gestión de Banda",
-  description: "Sistema integral de gestión para bandas musicales con almacenamiento en Google Drive",
-  keywords: ["banda", "música", "gestión", "google drive", "colaboración"],
+  title: "Band Hub - Gestión de Banda Musical",
+  description: "Plataforma completa para organizar tu banda: canciones, ensayos, ideas y más",
     generator: 'v0.dev'
 }
 
@@ -18,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es">
       <body className={inter.className}>{children}</body>
     </html>
   )
