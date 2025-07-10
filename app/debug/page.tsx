@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { EnhancedCSPDiagnostics } from "@/components/enhanced-csp-diagnostics"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,7 +10,19 @@ import Link from "next/link"
 import Image from "next/image"
 
 export default function DebugPage() {
+  const [isClient, setIsClient] = useState(false)
+
+  // Ensure we're on the client side before rendering browser-specific content
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
   const testGoogleSignIn = async () => {
+    if (typeof window === "undefined") {
+      alert("❌ Esta función solo está disponible en el navegador")
+      return
+    }
+
     try {
       console.log("🧪 Testing Google Sign-In manually...")
       const { driveStorage } = await import("@/lib/google-drive-storage")
@@ -25,6 +38,22 @@ export default function DebugPage() {
       console.error("Test error:", error)
       alert(`❌ Test error: ${error.message}`)
     }
+  }
+
+  // Show loading state during SSR
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
+        <div className="container mx-auto p-6">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto mb-4"></div>
+              <p className="text-slate-600">Cargando herramientas de diagnóstico...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -90,7 +119,7 @@ export default function DebugPage() {
           </CardContent>
         </Card>
 
-        {/* Main Diagnostics */}
+        {/* Main Diagnostics - Only render on client */}
         <EnhancedCSPDiagnostics />
 
         {/* Links útiles */}

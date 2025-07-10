@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CheckCircle, XCircle, AlertTriangle, RefreshCw, Shield, Settings, Eye, Copy } from "lucide-react"
-import { driveStorage } from "@/lib/google-drive-storage"
 
 interface CSPViolation {
   blockedURI: string
@@ -33,14 +32,22 @@ export function EnhancedCSPDiagnostics() {
   const [lastRun, setLastRun] = useState<Date | null>(null)
   const [liveLog, setLiveLog] = useState<string[]>([])
   const [currentCSP, setCurrentCSP] = useState<string>("")
+  const [isClient, setIsClient] = useState(false)
+
+  // Ensure we're on the client side
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
 
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString()
     setLiveLog((prev) => [...prev.slice(-9), `[${timestamp}] ${message}`])
   }
 
-  // Listen for CSP violations
+  // Listen for CSP violations - only on client
   useEffect(() => {
+    if (!isClient || typeof window === "undefined") return
+
     const handleCSPViolation = (event: SecurityPolicyViolationEvent) => {
       const violation: CSPViolation = {
         blockedURI: event.blockedURI,
@@ -62,9 +69,14 @@ export function EnhancedCSPDiagnostics() {
     return () => {
       document.removeEventListener("securitypolicyviolation", handleCSPViolation)
     }
-  }, [])
+  }, [isClient])
 
   const runComprehensiveDiagnostics = async () => {
+    if (!isClient || typeof window === "undefined") {
+      addLog("❌ Diagnostics can only run in browser environment")
+      return
+    }
+
     setIsRunning(true)
     setDiagnostics([])
     setLiveLog([])
@@ -256,6 +268,7 @@ export function EnhancedCSPDiagnostics() {
       // 7. Drive Storage Test
       addLog("💾 Testing Google Drive integration...")
       try {
+        const { driveStorage } = await import("@/lib/google-drive-storage")
         const diagnosticInfo = driveStorage.getDiagnosticInfo()
         const isHealthy =
           diagnosticInfo.config.hasApiKey &&
@@ -313,10 +326,21 @@ export function EnhancedCSPDiagnostics() {
   }
 
   const copyToClipboard = async (text: string) => {
+    if (typeof window === "undefined" || !navigator.clipboard) {
+      // Fallback for older browsers or SSR
+      const textArea = document.createElement("textarea")
+      textArea.value = text
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textArea)
+      return
+    }
+
     try {
       await navigator.clipboard.writeText(text)
     } catch (error) {
-      // Fallback for older browsers
+      // Fallback
       const textArea = document.createElement("textarea")
       textArea.value = text
       document.body.appendChild(textArea)
@@ -356,9 +380,24 @@ export function EnhancedCSPDiagnostics() {
     }
   }
 
+  // Run diagnostics only on client
   useEffect(() => {
-    runComprehensiveDiagnostics()
-  }, [])
+    if (isClient) {
+      runComprehensiveDiagnostics()
+    }
+  }, [isClient])
+
+  // Show loading state during SSR or initial client render
+  if (!isClient) {
+    return (
+      <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-lg">
+        <CardContent className="p-8 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Inicializando herramientas de diagnóstico...</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   const successCount = diagnostics.filter((d) => d.status === "success").length
   const errorCount = diagnostics.filter((d) => d.status === "error").length
@@ -549,10 +588,13 @@ export function EnhancedCSPDiagnostics() {
                 <h4 className="font-medium text-slate-800 mb-2">Environment Information</h4>
                 <div className="bg-slate-50 p-3 rounded border text-xs space-y-1">
                   <p>
-                    <strong>Domain:</strong> {window.location.origin}
+                    <strong>Domain:</strong> {isClient ? window.location.origin : "Loading..."}
                   </p>
                   <p>
-                    <strong>User Agent:</strong> {navigator.userAgent.slice(0, 50)}...
+                    <strong>User Agent:</strong>{" "}
+                    {isClient && typeof navigator !== "undefined"
+                      ? navigator.userAgent.slice(0, 50) + "..."
+                      : "Loading..."}
                   </p>
                   <p>
                     <strong>API Key Present:</strong> {!!process.env.NEXT_PUBLIC_GOOGLE_API_KEY ? "✅" : "❌"}
@@ -562,7 +604,7 @@ export function EnhancedCSPDiagnostics() {
                   </p>
                   <p>
                     <strong>Window.gapi:</strong>{" "}
-                    {typeof window !== "undefined" && window.gapi ? "✅ Loaded" : "❌ Not loaded"}
+                    {isClient && typeof window !== "undefined" && window.gapi ? "✅ Loaded" : "❌ Not loaded"}
                   </p>
                 </div>
               </div>
