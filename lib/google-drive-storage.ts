@@ -25,6 +25,7 @@ class GoogleDriveStorage {
 
   /* ───────────────────────── HELPERS ───────────────────────── */
 
+  // ✅ MÉTODO CORREGIDO: loadGoogleApi (consistente en todo el archivo)
   private loadGoogleApi(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (window.gapi) return resolve()
@@ -61,18 +62,19 @@ class GoogleDriveStorage {
           const origin = window.location.origin
           throw new Error(
             `GAPI_INIT_ERROR: El dominio "${origin}" no está autorizado.\n` +
-              `Añádelo en Google Cloud Console → OAuth 2.0 Client ID → “Authorized JavaScript origins”.`,
+              `Añádelo en Google Cloud Console → OAuth 2.0 Client ID → "Authorized JavaScript origins".`,
           )
         }
         throw new Error(`GAPI_INIT_ERROR: ${error?.details || error?.message || "Unknown error"}`)
       })
   }
 
-  private async ensureClientReady() {
+  private async ensureClientReady(): Promise<void> {
     if (this.isInitialized) return
     if (this.initializationPromise) return this.initializationPromise
 
     this.initializationPromise = (async () => {
+      // ✅ CORRECTO: loadGoogleApi (consistente)
       await this.loadGoogleApi()
       await this.loadGapiModules()
       await this.initGapiClient()
@@ -80,6 +82,91 @@ class GoogleDriveStorage {
     })()
 
     return this.initializationPromise
+  }
+
+  private async validateAndRefreshToken(): Promise<void> {
+    try {
+      const authInstance = window.gapi.auth2.getAuthInstance()
+      if (!authInstance.isSignedIn.get()) {
+        await authInstance.signIn()
+      }
+
+      const user = authInstance.currentUser.get()
+      const authResponse = user.getAuthResponse()
+
+      // Verificar si el token está próximo a expirar (menos de 5 minutos)
+      const expiresIn = authResponse.expires_in || 0
+      if (expiresIn < 300) {
+        await user.reloadAuthResponse()
+      }
+    } catch (error) {
+      console.error("❌ Error validando token:", error)
+      throw new Error("TOKEN_VALIDATION_ERROR: Error validando token de acceso")
+    }
+  }
+
+  private async findFile(name: string, parentId: string): Promise<any> {
+    try {
+      const response = await window.gapi.client.drive.files.list({
+        q: `name='${name}' and '${parentId}' in parents and trashed=false`,
+        fields: "files(id, name)",
+      })
+
+      return response.result.files?.[0] || null
+    } catch (error) {
+      console.error(`❌ Error buscando archivo ${name}:`, error)
+      return null
+    }
+  }
+
+  private async findFolder(name: string, parentId: string): Promise<any> {
+    try {
+      const response = await window.gapi.client.drive.files.list({
+        q: `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: "files(id, name)",
+      })
+
+      return response.result.files?.[0] || null
+    } catch (error) {
+      console.error(`❌ Error buscando carpeta ${name}:`, error)
+      return null
+    }
+  }
+
+  private async updateFile(fileId: string, file: File): Promise<void> {
+    try {
+      const authInstance = window.gapi.auth2.getAuthInstance()
+      const accessToken = authInstance.currentUser.get().getAuthResponse().access_token
+
+      const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": file.type,
+        },
+        body: file,
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`UPDATE_ERROR: Error actualizando archivo (${response.status}): ${errorText}`)
+      }
+    } catch (error) {
+      console.error("❌ Error actualizando archivo:", error)
+      throw error
+    }
+  }
+
+  private hasStoredSession(): boolean {
+    const token = localStorage.getItem("googleAccessToken")
+    const expiry = localStorage.getItem("googleTokenExpiry")
+
+    if (!token || !expiry) return false
+
+    const expiryTime = Number.parseInt(expiry)
+    const now = Date.now()
+
+    return now < expiryTime
   }
 
   /* ───────────────────────── PUBLIC API ───────────────────────── */
@@ -98,6 +185,26 @@ class GoogleDriveStorage {
     }
   }
 
+  /** Autenticación sin inicialización completa */
+  async authenticateOnly(): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.ensureClientReady()
+
+      const auth = window.gapi.auth2.getAuthInstance()
+      if (!auth.isSignedIn.get()) {
+        await auth.signIn({ prompt: "consent" })
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      console.error("❌ Error en autenticación:", error)
+      return {
+        success: false,
+        error: error.message || "Error de autenticación con Google",
+      }
+    }
+  }
+
   /** Inicialización completa tras login */
   async initializeAfterLogin(): Promise<void> {
     await this.ensureClientReady()
@@ -107,6 +214,80 @@ class GoogleDriveStorage {
       await auth.signIn({ prompt: "consent" })
     }
     this.isSignedIn = true
+  }
+
+  // 🔄 CORREGIDO: Método para cargar usuarios sin inicialización completa
+  async loadUsersOnly(): Promise<any[]> {
+    try {
+      if (!this.isInitialized) {
+        // ✅ CORRECTO: loadGoogleApi (consistente)
+        await this.loadGoogleApi()
+        await this.loadGapiModules()
+        await this.initGapiClient()
+      }
+
+      // Buscar archivo de usuarios en la carpeta raíz o en datos
+      let usersFile = await this.findFile("users.json", "root")
+
+      if (!usersFile) {
+        // Buscar en carpeta de datos si existe
+        const dataFolder = await this.findFolder("Datos", "root")
+        if (dataFolder) {
+          usersFile = await this.findFile("users.json", dataFolder.id)
+        }
+      }
+
+      if (!usersFile) {
+        console.log("📝 Archivo users.json no encontrado, devolviendo array vacío")
+        return []
+      }
+
+      const response = await window.gapi.client.drive.files.get({
+        fileId: usersFile.id,
+        alt: "media",
+      })
+
+      return JSON.parse(response.body) || []
+    } catch (error) {
+      console.error("❌ Error cargando usuarios:", error)
+      return []
+    }
+  }
+
+  // 🔄 CORREGIDO: Método para guardar usuarios sin inicialización completa
+  async saveUsersOnly(users: any[]): Promise<void> {
+    try {
+      if (!this.isInitialized) {
+        // ✅ CORRECTO: loadGoogleApi (consistente)
+        await this.loadGoogleApi()
+        await this.loadGapiModules()
+        await this.initGapiClient()
+      }
+
+      const jsonData = JSON.stringify(users, null, 2)
+      const blob = new Blob([jsonData], { type: "application/json" })
+      const file = new File([blob], "users.json", { type: "application/json" })
+
+      // Buscar archivo existente
+      let existingFile = await this.findFile("users.json", "root")
+
+      if (!existingFile) {
+        const dataFolder = await this.findFolder("Datos", "root")
+        if (dataFolder) {
+          existingFile = await this.findFile("users.json", dataFolder.id)
+        }
+      }
+
+      if (existingFile) {
+        await this.updateFile(existingFile.id, file)
+      } else {
+        // Crear en raíz si no existe carpeta de datos
+        await this.uploadFile(file, "users.json", "root")
+      }
+    } catch (error) {
+      console.error("❌ Error guardando usuarios:", error)
+      throw error
+    }
   }
 
   /** Ejemplo de subida de archivos */
@@ -129,7 +310,6 @@ class GoogleDriveStorage {
     return json.id
   }
 
-  /* … Resto de métodos (saveData, loadData, etc.) … */
   async saveData(fileName: string, data: any): Promise<void> {
     if (!this.isInitialized) {
       await this.initializeAfterLogin()
@@ -184,44 +364,6 @@ class GoogleDriveStorage {
     }
   }
 
-  private async findFile(name: string, parentId: string): Promise<any> {
-    try {
-      const response = await window.gapi.client.drive.files.list({
-        q: `name='${name}' and '${parentId}' in parents and trashed=false`,
-        fields: "files(id, name)",
-      })
-
-      return response.result.files?.[0] || null
-    } catch (error) {
-      console.error(`❌ Error buscando archivo ${name}:`, error)
-      return null
-    }
-  }
-
-  private async updateFile(fileId: string, file: File): Promise<void> {
-    try {
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      const accessToken = authInstance.currentUser.get().getAuthResponse().access_token
-
-      const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": file.type,
-        },
-        body: file,
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`UPDATE_ERROR: Error actualizando archivo (${response.status}): ${errorText}`)
-      }
-    } catch (error) {
-      console.error("❌ Error actualizando archivo:", error)
-      throw error
-    }
-  }
-
   async deleteFile(fileId: string): Promise<void> {
     if (!this.isInitialized) {
       await this.initializeAfterLogin()
@@ -249,145 +391,6 @@ class GoogleDriveStorage {
 
   getFolderIds() {
     return this.folderIds
-  }
-
-  // 🔄 NUEVO: Método para cargar usuarios sin inicialización completa
-  async loadUsersOnly(): Promise<any[]> {
-    try {
-      if (!this.isInitialized) {
-        // Inicialización mínima solo para cargar usuarios
-        await this.loadGoogleApi()
-        await this.loadGapiModules()
-        await this.initGapiClient()
-      }
-
-      // Buscar archivo de usuarios en la carpeta raíz o en datos
-      let usersFile = await this.findFile("users.json", "root")
-
-      if (!usersFile) {
-        // Buscar en carpeta de datos si existe
-        const dataFolder = await this.findFolder("Datos", "root")
-        if (dataFolder) {
-          usersFile = await this.findFile("users.json", dataFolder.id)
-        }
-      }
-
-      if (!usersFile) {
-        console.log("📝 Archivo users.json no encontrado, devolviendo array vacío")
-        return []
-      }
-
-      const response = await window.gapi.client.drive.files.get({
-        fileId: usersFile.id,
-        alt: "media",
-      })
-
-      return JSON.parse(response.body) || []
-    } catch (error) {
-      console.error("❌ Error cargando usuarios:", error)
-      return []
-    }
-  }
-
-  // 🔄 NUEVO: Método para guardar usuarios sin inicialización completa
-  async saveUsersOnly(users: any[]): Promise<void> {
-    try {
-      if (!this.isInitialized) {
-        await this.loadGoogleApi()
-        await this.loadGapiModules()
-        await this.initGapiClient()
-      }
-
-      const jsonData = JSON.stringify(users, null, 2)
-      const blob = new Blob([jsonData], { type: "application/json" })
-      const file = new File([blob], "users.json", { type: "application/json" })
-
-      // Buscar archivo existente
-      let existingFile = await this.findFile("users.json", "root")
-
-      if (!existingFile) {
-        const dataFolder = await this.findFolder("Datos", "root")
-        if (dataFolder) {
-          existingFile = await this.findFile("users.json", dataFolder.id)
-        }
-      }
-
-      if (existingFile) {
-        await this.updateFile(existingFile.id, file)
-      } else {
-        // Crear en raíz si no existe carpeta de datos
-        await this.uploadFile(file, "users.json", "root")
-      }
-    } catch (error) {
-      console.error("❌ Error guardando usuarios:", error)
-      throw error
-    }
-  }
-
-  private async validateAndRefreshToken(): Promise<void> {
-    try {
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      if (!authInstance.isSignedIn.get()) {
-        await authInstance.signIn()
-      }
-
-      const user = authInstance.currentUser.get()
-      const authResponse = user.getAuthResponse()
-
-      // Verificar si el token está próximo a expirar (menos de 5 minutos)
-      const expiresIn = authResponse.expires_in || 0
-      if (expiresIn < 300) {
-        await user.reloadAuthResponse()
-      }
-    } catch (error) {
-      console.error("❌ Error validando token:", error)
-      throw new Error("TOKEN_VALIDATION_ERROR: Error validando token de acceso")
-    }
-  }
-
-  private async findFolder(name: string, parentId: string): Promise<any> {
-    try {
-      const response = await window.gapi.client.drive.files.list({
-        q: `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-        fields: "files(id, name)",
-      })
-
-      return response.result.files?.[0] || null
-    } catch (error) {
-      console.error(`❌ Error buscando carpeta ${name}:`, error)
-      return null
-    }
-  }
-
-  private hasStoredSession(): boolean {
-    const token = localStorage.getItem("googleAccessToken")
-    const expiry = localStorage.getItem("googleTokenExpiry")
-
-    if (!token || !expiry) return false
-
-    const expiryTime = Number.parseInt(expiry)
-    const now = Date.now()
-
-    return now < expiryTime
-  }
-
-  async authenticateOnly(): Promise<{ success: boolean; error?: string }> {
-    try {
-      await this.ensureClientReady()
-
-      const auth = window.gapi.auth2.getAuthInstance()
-      if (!auth.isSignedIn.get()) {
-        await auth.signIn({ prompt: "consent" })
-      }
-
-      return { success: true }
-    } catch (error: any) {
-      console.error("❌ Error en autenticación:", error)
-      return {
-        success: false,
-        error: error.message || "Error de autenticación con Google",
-      }
-    }
   }
 
   async reconnect(): Promise<void> {
