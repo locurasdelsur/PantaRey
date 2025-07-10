@@ -2,339 +2,337 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect, useRef } from "react"
+import { AuthGuard } from "@/components/auth-guard"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { MessageCircle, Send, Users, Hash, Trash2 } from "lucide-react"
-import Link from "next/link"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { MessageCircle, Send, Users, Clock, Music, Smile } from "lucide-react"
 import Image from "next/image"
 
-interface Message {
-  id: number
-  author: string
-  content: string
+interface ChatMessage {
+  id: string
+  user: string
+  message: string
   timestamp: string
-  channel: string
+  type: "message" | "system"
 }
 
-interface Channel {
-  id: string
+interface User {
   name: string
-  description: string
-  messageCount: number
-  lastActivity: string
+  instrument: string
+  isOnline: boolean
+  lastSeen?: string
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [newMessage, setNewMessage] = useState("")
+  const [currentUser, setCurrentUser] = useState("")
+  const [onlineUsers, setOnlineUsers] = useState<User[]>([])
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [isTyping, setIsTyping] = useState(false)
 
-  // Cargar datos globales compartidos
+  // Load user data and messages
   useEffect(() => {
-    // Cargar usuario actual
-    const user = localStorage.getItem("currentUser")
-    if (user) {
-      setCurrentUser(JSON.parse(user))
+    const userName = localStorage.getItem("userName") || "Usuario"
+    const userInstrument = localStorage.getItem("userInstrument") || "Músico"
+    setCurrentUser(userName)
+
+    // Load saved messages
+    const savedMessages = localStorage.getItem("chatMessages")
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages))
+    } else {
+      // Initial welcome message
+      const welcomeMessage: ChatMessage = {
+        id: "welcome",
+        user: "Sistema",
+        message: `¡Bienvenido al chat de la banda, ${userName}! 🎵`,
+        timestamp: new Date().toISOString(),
+        type: "system",
+      }
+      setMessages([welcomeMessage])
     }
 
-    // Cargar mensajes globales
-    const savedMessages = localStorage.getItem("globalBandMessages")
-    if (savedMessages) {
-      try {
-        const parsedMessages = JSON.parse(savedMessages)
-        setMessages(parsedMessages)
-      } catch (error) {
-        console.error("Error loading messages:", error)
-      }
-    }
+    // Simulate online users
+    const mockUsers: User[] = [
+      { name: userName, instrument: userInstrument, isOnline: true },
+      { name: "Alex", instrument: "Guitarra", isOnline: true },
+      { name: "María", instrument: "Bajo", isOnline: false, lastSeen: "Hace 2 horas" },
+      { name: "Carlos", instrument: "Batería", isOnline: true },
+      { name: "Sofía", instrument: "Voz", isOnline: false, lastSeen: "Ayer" },
+    ]
+    setOnlineUsers(mockUsers)
   }, [])
 
-  // Guardar mensajes globalmente
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem("globalBandMessages", JSON.stringify(messages))
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const [channels] = useState<Channel[]>([
-    {
-      id: "general",
-      name: "General",
-      description: "Conversaciones generales de la banda",
-      messageCount: 0,
-      lastActivity: "2025-01-08 15:30",
-    },
-    {
-      id: "shows",
-      name: "Shows y Presentaciones",
-      description: "Organización de shows y eventos",
-      messageCount: 0,
-      lastActivity: "2025-01-08 14:20",
-    },
-    {
-      id: "composicion",
-      name: "Composición",
-      description: "Ideas y desarrollo de nuevas canciones",
-      messageCount: 0,
-      lastActivity: "2025-01-08 16:45",
-    },
-    {
-      id: "equipos",
-      name: "Equipos y Técnico",
-      description: "Discusiones sobre equipos y aspectos técnicos",
-      messageCount: 0,
-      lastActivity: "2025-01-07 19:15",
-    },
-    {
-      id: "grabacion",
-      name: "Grabación",
-      description: "Todo sobre sesiones de grabación",
-      messageCount: 0,
-      lastActivity: "2025-01-08 11:30",
-    },
-  ])
-
-  const [activeChannel, setActiveChannel] = useState("general")
-  const [newMessage, setNewMessage] = useState("")
-
-  // Calcular contadores reales por canal
-  const getChannelStats = () => {
-    return channels.map((channel) => ({
-      ...channel,
-      messageCount: messages.filter((msg) => msg.channel === channel.id).length,
-      lastActivity:
-        messages
-          .filter((msg) => msg.channel === channel.id)
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]?.timestamp ||
-        channel.lastActivity,
-    }))
+  // Save messages to localStorage
+  const saveMessages = (updatedMessages: ChatMessage[]) => {
+    setMessages(updatedMessages)
+    localStorage.setItem("chatMessages", JSON.stringify(updatedMessages))
   }
 
-  const channelsWithStats = getChannelStats()
-  const activeChannelData = channelsWithStats.find((ch) => ch.id === activeChannel)
-  const channelMessages = messages.filter((msg) => msg.channel === activeChannel)
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault()
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      const message: Message = {
-        id: Date.now(),
-        author: currentUser?.name || "Usuario",
-        content: newMessage,
-        timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
-        channel: activeChannel,
+    if (!newMessage.trim()) return
+
+    const message: ChatMessage = {
+      id: Date.now().toString(),
+      user: currentUser,
+      message: newMessage.trim(),
+      timestamp: new Date().toISOString(),
+      type: "message",
+    }
+
+    const updatedMessages = [...messages, message]
+    saveMessages(updatedMessages)
+    setNewMessage("")
+
+    // Simulate typing indicator
+    setIsTyping(true)
+    setTimeout(() => {
+      setIsTyping(false)
+
+      // Simulate random responses from band members (for demo)
+      if (Math.random() > 0.7) {
+        const responses = [
+          "¡Genial! 🎸",
+          "Totalmente de acuerdo 👍",
+          "¿A qué hora ensayamos?",
+          "Perfecto, ahí estaré 🥁",
+          "¡Suena bien! 🎵",
+          "¿Ya tienes la letra lista?",
+          "¡Vamos a rockear! 🤘",
+        ]
+
+        const randomUser = ["Alex", "Carlos", "Sofía"][Math.floor(Math.random() * 3)]
+        const randomResponse = responses[Math.floor(Math.random() * responses.length)]
+
+        const responseMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          user: randomUser,
+          message: randomResponse,
+          timestamp: new Date().toISOString(),
+          type: "message",
+        }
+
+        setTimeout(() => {
+          const newerMessages = [...updatedMessages, responseMessage]
+          saveMessages(newerMessages)
+        }, 1500)
       }
-      const updatedMessages = [...messages, message]
-      setMessages(updatedMessages)
-      localStorage.setItem("globalBandMessages", JSON.stringify(updatedMessages))
-      setNewMessage("")
+    }, 2000)
+  }
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    } else {
+      return date.toLocaleDateString("es-ES", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
+  const getMessageBubbleStyle = (user: string) => {
+    if (user === currentUser) {
+      return "bg-gradient-to-r from-amber-500 to-amber-600 text-white ml-auto"
+    } else if (user === "Sistema") {
+      return "bg-blue-100 text-blue-800 mx-auto"
+    } else {
+      return "bg-white border border-slate-200 text-slate-800"
     }
   }
 
-  const deleteMessage = (messageId: number) => {
-    if (confirm("¿Estás seguro de que quieres eliminar este mensaje?")) {
-      const updatedMessages = messages.filter((message) => message.id !== messageId)
-      setMessages(updatedMessages)
-      if (updatedMessages.length === 0) {
-        localStorage.removeItem("globalBandMessages")
-      } else {
-        localStorage.setItem("globalBandMessages", JSON.stringify(updatedMessages))
-      }
-    }
-  }
+  const onlineCount = onlineUsers.filter((user) => user.isOnline).length
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
-      <div className="container mx-auto p-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-12">
-          <div>
-            <Link
-              href="/"
-              className="text-slate-600 hover:text-slate-800 mb-4 inline-flex items-center gap-2 font-medium"
-            >
-              ← Volver al Dashboard
-            </Link>
-            <div className="flex items-center gap-4 mb-4">
-              <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
-              <div>
-                <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">Comunicación</h1>
-                <p className="text-slate-600">Conversaciones organizadas por tema</p>
-              </div>
-            </div>
-            <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-gray-500">
-              <Users className="h-4 w-4" />
-              <span className="text-sm">3 miembros online</span>
+    <AuthGuard>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
+        <div className="container mx-auto p-6">
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-8">
+            <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
+            <div>
+              <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">💬 Chat de la Banda</h1>
+              <p className="text-slate-600">Comunícate con tu banda en tiempo real</p>
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[600px]">
-          {/* Channels Sidebar */}
-          <div className="lg:col-span-1">
-            <Card className="shadow-md">
-              <CardHeader>
-                <CardTitle className="text-gray-700 flex items-center gap-2">
-                  <Hash className="h-5 w-5" />
-                  Canales
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {channelsWithStats.map((channel) => (
-                    <button
-                      key={channel.id}
-                      onClick={() => setActiveChannel(channel.id)}
-                      className={`
-                        w-full text-left p-3 rounded-lg transition-colors
-                        ${
-                          activeChannel === channel.id
-                            ? "bg-blue-500 text-white hover:bg-blue-600"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }
-                      `}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium">#{channel.name}</span>
-                        <Badge variant="outline" className="text-xs border-gray-400 text-gray-600">
-                          {channel.messageCount}
-                        </Badge>
-                      </div>
-                      <p className="text-xs opacity-75 truncate">{channel.description}</p>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full mb-8"></div>
 
-          {/* Chat Area */}
-          <div className="lg:col-span-3">
-            <Card className="shadow-md h-full flex flex-col">
-              {/* Chat Header */}
-              <CardHeader className="border-b">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-gray-700 flex items-center gap-2">
-                      <Hash className="h-5 w-5" />
-                      {activeChannelData?.name}
-                    </CardTitle>
-                    <CardDescription className="text-gray-500">{activeChannelData?.description}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-gray-600 border-gray-400">
-                      {channelMessages.length} mensajes
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-
-              {/* Messages */}
-              <CardContent className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-4">
-                  {channelMessages.map((message) => (
-                    <div key={message.id} className="flex gap-3 group">
-                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                        {message.author[0]}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-gray-800">{message.author}</span>
-                          <span className="text-xs text-gray-500">{message.timestamp}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteMessage(message.id)}
-                            className="h-4 w-4 p-0 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+          <div className="grid lg:grid-cols-4 gap-6">
+            {/* Online Users Sidebar */}
+            <div className="lg:col-span-1">
+              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-slate-800 flex items-center gap-2">
+                    <Users className="h-5 w-5 text-green-500" />
+                    Miembros
+                    <Badge className="bg-green-100 text-green-800">{onlineCount} en línea</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {onlineUsers.map((user, index) => (
+                      <div key={index} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50">
+                        <div className="relative">
+                          <div className="w-10 h-10 bg-gradient-to-br from-slate-300 to-slate-400 rounded-full flex items-center justify-center">
+                            <Music className="h-5 w-5 text-slate-600" />
+                          </div>
+                          <div
+                            className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
+                              user.isOnline ? "bg-green-500" : "bg-slate-400"
+                            }`}
+                          ></div>
                         </div>
-                        <p className="text-gray-700">{message.content}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-800 truncate">{user.name}</span>
+                            {user.name === currentUser && (
+                              <Badge variant="secondary" className="text-xs">
+                                Tú
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500">{user.instrument}</div>
+                          {!user.isOnline && user.lastSeen && (
+                            <div className="text-xs text-slate-400 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {user.lastSeen}
+                            </div>
+                          )}
+                        </div>
+                        {user.isOnline && <div className="w-2 h-2 bg-green-500 rounded-full"></div>}
                       </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Chat Main Area */}
+            <div className="lg:col-span-3">
+              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg h-[600px] flex flex-col">
+                <CardHeader className="flex-shrink-0">
+                  <CardTitle className="text-slate-800 flex items-center gap-2">
+                    <MessageCircle className="h-5 w-5 text-blue-500" />
+                    Chat General
+                  </CardTitle>
+                </CardHeader>
+
+                {/* Messages Area */}
+                <CardContent className="flex-1 flex flex-col min-h-0">
+                  <ScrollArea className="flex-1 pr-4">
+                    <div className="space-y-4">
+                      {messages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`flex ${
+                            message.user === currentUser
+                              ? "justify-end"
+                              : message.type === "system"
+                                ? "justify-center"
+                                : "justify-start"
+                          }`}
+                        >
+                          <div className={`max-w-xs lg:max-w-md rounded-lg p-3 ${getMessageBubbleStyle(message.user)}`}>
+                            {message.type === "message" && message.user !== currentUser && (
+                              <div className="text-xs font-medium mb-1 text-slate-600">{message.user}</div>
+                            )}
+                            <div className="text-sm break-words">{message.message}</div>
+                            <div
+                              className={`text-xs mt-1 ${
+                                message.user === currentUser
+                                  ? "text-amber-200"
+                                  : message.type === "system"
+                                    ? "text-blue-600"
+                                    : "text-slate-500"
+                              }`}
+                            >
+                              {formatTime(message.timestamp)}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Typing Indicator */}
+                      {isTyping && (
+                        <div className="flex justify-start">
+                          <div className="bg-slate-100 rounded-lg p-3 max-w-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="flex gap-1">
+                                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                                <div
+                                  className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.1s" }}
+                                ></div>
+                                <div
+                                  className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.2s" }}
+                                ></div>
+                              </div>
+                              <span className="text-xs text-slate-500 ml-2">escribiendo...</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div ref={messagesEndRef} />
                     </div>
-                  ))}
-                </div>
-              </CardContent>
+                  </ScrollArea>
 
-              {/* Message Input */}
-              <div className="p-4 border-t">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={`Mensaje en #${activeChannelData?.name}...`}
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    className="bg-gray-100 border-gray-300 text-gray-700 flex-1"
-                  />
-                  <Button onClick={handleSendMessage} className="bg-blue-500 hover:bg-blue-600 text-white">
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </Card>
+                  {/* Message Input */}
+                  <form onSubmit={handleSendMessage} className="flex gap-2 mt-4 pt-4 border-t border-slate-200">
+                    <div className="flex-1 relative">
+                      <Input
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Escribe tu mensaje..."
+                        autoComplete="off"
+                        className="pr-12 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+                      >
+                        <Smile className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={!newMessage.trim()}
+                      className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
-
-        {/* Quick Actions con estadísticas reales */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="shadow-md">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <MessageCircle className="h-8 w-8 text-blue-400" />
-                <div>
-                  <h3 className="font-medium text-gray-800">Mensajes Totales</h3>
-                  <p className="text-2xl font-bold text-gray-900">{messages.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-md">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Hash className="h-8 w-8 text-green-400" />
-                <div>
-                  <h3 className="font-medium text-gray-800">Canales Activos</h3>
-                  <p className="text-2xl font-bold text-gray-900">{channelsWithStats.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-md">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Users className="h-8 w-8 text-purple-400" />
-                <div>
-                  <h3 className="font-medium text-gray-800">Mensajes Hoy</h3>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {
-                      messages.filter((msg) => {
-                        const msgDate = new Date(msg.timestamp).toDateString()
-                        const today = new Date().toDateString()
-                        return msgDate === today
-                      }).length
-                    }
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
-    </div>
+    </AuthGuard>
   )
 }
