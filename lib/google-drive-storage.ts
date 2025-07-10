@@ -15,33 +15,28 @@ class GoogleDriveStorage {
 
   constructor(config: GoogleDriveConfig) {
     this.config = config
-    // Logs de diagnóstico mejorados
-    const isDev = process.env.NODE_ENV === "development"
-    const isProduction = typeof window !== "undefined" && window.location.hostname !== "localhost"
 
+    // 🔍 DIAGNÓSTICO MEJORADO para debug en producción
+    console.log("🔧 Google Drive Config Debug:")
     console.table({
       Environment: process.env.NODE_ENV || "unknown",
-      Hostname: typeof window !== "undefined" ? window.location.hostname : "SSR",
-      "API Key": this.config.apiKey ? `${this.config.apiKey.slice(0, 8)}...` : "❌ MISSING",
-      "Client ID": this.config.clientId ? `${this.config.clientId.slice(0, 12)}...` : "❌ MISSING",
-      "API Key Format": this.config.apiKey?.startsWith("AIza") ? "✅ Valid" : "❌ Invalid",
-      "Client ID Format": this.config.clientId?.includes(".apps.googleusercontent.com") ? "✅ Valid" : "❌ Invalid",
+      "API Key Present": !!this.config.apiKey,
+      "API Key Length": this.config.apiKey?.length || 0,
+      "API Key Preview": this.config.apiKey?.slice(0, 10) + "..." || "❌ MISSING",
+      "Client ID Present": !!this.config.clientId,
+      "Client ID Length": this.config.clientId?.length || 0,
+      "Client ID Preview": this.config.clientId?.slice(0, 15) + "..." || "❌ MISSING",
+      Origin: typeof window !== "undefined" ? window.location.origin : "SSR",
     })
 
-    // Advertencias específicas para producción
-    if (isProduction && (!this.config.apiKey || !this.config.clientId)) {
-      console.error(`
-🚨 CONFIGURACIÓN FALTANTE EN PRODUCCIÓN:
-${!this.config.apiKey ? "❌ NEXT_PUBLIC_GOOGLE_API_KEY no configurada" : ""}
-${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""}
-
-📋 PASOS PARA SOLUCIONARLO:
-1. Ve a https://app.netlify.com
-2. Selecciona tu sitio
-3. Ve a Site settings > Environment variables
-4. Agrega las variables de entorno necesarias
-5. Redespliega el sitio
-      `)
+    // 🚨 LOGS ADICIONALES para Netlify
+    if (typeof window !== "undefined") {
+      console.log("🌐 Runtime Environment Variables:")
+      console.log("NEXT_PUBLIC_GOOGLE_API_KEY:", process.env.NEXT_PUBLIC_GOOGLE_API_KEY ? "✅ Present" : "❌ Missing")
+      console.log(
+        "NEXT_PUBLIC_GOOGLE_CLIENT_ID:",
+        process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? "✅ Present" : "❌ Missing",
+      )
     }
   }
 
@@ -78,29 +73,15 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
         scope: this.config.scope,
       })
       .catch((error: any) => {
-        // Mensajes de error más específicos
-        if (error?.error === "idpiframe_initialization_failed") {
+        // Origin NO autorizado → mensaje claro
+        if (error?.error === "idpiframe_initialization_failed" || /has not been registered/iu.test(error?.details)) {
           const origin = window.location.origin
           throw new Error(
-            `🚨 DOMINIO NO AUTORIZADO: "${origin}"\n\n` +
-              `📋 SOLUCIÓN:\n` +
-              `1. Ve a https://console.cloud.google.com\n` +
-              `2. APIs & Services > Credentials\n` +
-              `3. Edita tu OAuth 2.0 Client ID\n` +
-              `4. Agrega "${origin}" en "Authorized JavaScript origins"\n` +
-              `5. Guarda los cambios`,
+            `GAPI_INIT_ERROR: El dominio "${origin}" no está autorizado.\n` +
+              `Añádelo en Google Cloud Console → OAuth 2.0 Client ID → "Authorized JavaScript origins".`,
           )
         }
-
-        if (/has not been registered/i.test(error?.details || "")) {
-          throw new Error(
-            `🚨 APLICACIÓN NO REGISTRADA\n\n` +
-              `El Client ID no está registrado para este dominio.\n` +
-              `Verifica la configuración en Google Cloud Console.`,
-          )
-        }
-
-        throw new Error(`GAPI_INIT_ERROR: ${error?.details || error?.message || "Error desconocido"}`)
+        throw new Error(`GAPI_INIT_ERROR: ${error?.details || error?.message || "Unknown error"}`)
       })
   }
 
@@ -205,33 +186,43 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
 
   /* ───────────────────────── PUBLIC API ───────────────────────── */
 
-  /** Verifica formato de credenciales y carga gapi sin iniciar sesión */
+  /** 🔍 MEJORADO: Verifica formato de credenciales con más detalle */
   async quickInit(): Promise<boolean> {
-    // Verificación más estricta
-    if (!this.config.apiKey || !this.config.clientId) {
-      console.error("❌ Credenciales faltantes:", {
-        apiKey: !!this.config.apiKey,
-        clientId: !!this.config.clientId,
-      })
+    console.log("🔍 QuickInit - Verificando credenciales...")
+
+    // Verificar que las variables existan
+    if (!this.config.apiKey) {
+      console.error("❌ API Key no encontrada")
+      console.log("Valor recibido:", this.config.apiKey)
       return false
     }
 
+    if (!this.config.clientId) {
+      console.error("❌ Client ID no encontrado")
+      console.log("Valor recibido:", this.config.clientId)
+      return false
+    }
+
+    // Verificar formato
     if (!this.config.apiKey.startsWith("AIza")) {
-      console.error("❌ Formato de API Key inválido")
+      console.error("❌ API Key no tiene el formato correcto (debe empezar con 'AIza')")
+      console.log("API Key recibida:", this.config.apiKey.slice(0, 10) + "...")
       return false
     }
 
     if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
-      console.error("❌ Formato de Client ID inválido")
+      console.error("❌ Client ID no tiene el formato correcto (debe terminar con '.apps.googleusercontent.com')")
+      console.log("Client ID recibido:", this.config.clientId.slice(0, 20) + "...")
       return false
     }
 
     try {
+      console.log("✅ Credenciales válidas, inicializando GAPI...")
       await this.ensureClientReady()
-      console.log("✅ Google Drive inicializado correctamente")
+      console.log("✅ GAPI inicializado correctamente")
       return true
     } catch (error) {
-      console.error("❌ Error inicializando Google Drive:", error)
+      console.error("❌ Error inicializando GAPI:", error)
       return false
     }
   }
@@ -246,7 +237,6 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
         await auth.signIn({ prompt: "consent" })
       }
 
-      console.log("✅ Autenticación exitosa")
       return { success: true }
     } catch (error: any) {
       console.error("❌ Error en autenticación:", error)
@@ -266,7 +256,6 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
       await auth.signIn({ prompt: "consent" })
     }
     this.isSignedIn = true
-    console.log("✅ Google Drive completamente inicializado")
   }
 
   async loadUsersOnly(): Promise<any[]> {
@@ -339,7 +328,6 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
     }
   }
 
-  /** Ejemplo de subida de archivos */
   async uploadFile(file: File, fileName: string, folderId?: string): Promise<string> {
     if (!this.isInitialized) await this.initializeAfterLogin()
 
@@ -400,7 +388,6 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
         return null
       }
 
-      // Usar gapi.client en lugar de fetch
       const response = await window.gapi.client.drive.files.get({
         fileId: file.id,
         alt: "media",
@@ -474,7 +461,6 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
       },
       environment: {
         nodeEnv: process.env.NODE_ENV,
-        hostname: typeof window !== "undefined" ? window.location.hostname : "SSR",
         hasApiKeyEnv: !!process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
         hasClientIdEnv: !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
       },
@@ -483,10 +469,7 @@ ${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""
   }
 }
 
-/* -------------------------------------------------------------------------------- */
-
 declare global {
-  // eslint-disable-next-line vars-on-top, no-var
   var gapi: any
 }
 
