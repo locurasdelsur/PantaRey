@@ -316,94 +316,31 @@ class GoogleDriveStorage {
 
   /* ───────────────────────── PUBLIC API ───────────────────────── */
 
-  async quickInit(): Promise<boolean> {
-    console.log("🔍 QuickInit - Verifying credentials...")
-
-    // Check that variables exist
-    if (!this.config.apiKey) {
-      console.error("❌ API Key not found")
-      console.log("Received value:", this.config.apiKey)
-      return false
-    }
-
-    if (!this.config.clientId) {
-      console.error("❌ Client ID not found")
-      console.log("Received value:", this.config.clientId)
-      return false
-    }
-
-    // Check format
-    if (!this.config.apiKey.startsWith("AIza")) {
-      console.error("❌ API Key format incorrect (should start with 'AIza')")
-      console.log("Received API Key:", this.config.apiKey.slice(0, 10) + "...")
-      return false
-    }
-
-    if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
-      console.error("❌ Client ID format incorrect (should end with '.apps.googleusercontent.com')")
-      console.log("Received Client ID:", this.config.clientId.slice(0, 20) + "...")
-      return false
-    }
-
-    try {
-      console.log("✅ Valid credentials, initializing GAPI...")
-      await this.ensureClientReady()
-      console.log("✅ GAPI initialized correctly")
-      return true
-    } catch (error) {
-      console.error("❌ Error initializing GAPI:", error)
-      return false
-    }
+  // Verificar si las credenciales están configuradas
+  hasValidCredentials(): boolean {
+    return !!(
+      this.config.apiKey &&
+      this.config.clientId &&
+      this.config.apiKey.startsWith("AIza") &&
+      this.config.clientId.includes(".apps.googleusercontent.com")
+    )
   }
 
-  async authenticateOnly(): Promise<{ success: boolean; error?: string }> {
-    try {
-      console.log("🔐 Starting authentication...")
-      await this.ensureClientReady()
-
-      const auth = window.gapi.auth2.getAuthInstance()
-      if (!auth.isSignedIn.get()) {
-        console.log("📝 User not signed in, prompting for consent...")
-        await auth.signIn({
-          prompt: "consent",
-          ux_mode: "popup", // Use popup mode to avoid CSP issues with redirects
-        })
-      }
-
-      console.log("✅ Authentication successful")
-      return { success: true }
-    } catch (error: any) {
-      console.error("❌ Authentication error:", error)
-
-      // Provide specific error messages for common issues
-      if (error.message?.includes("popup_blocked")) {
-        return {
-          success: false,
-          error: "Popup blocked by browser. Please allow popups for this site and try again.",
-        }
-      }
-
-      if (error.message?.includes("CSP") || error.message?.includes("frame")) {
-        return {
-          success: false,
-          error: "Content Security Policy is blocking Google Sign-In. Please check your CSP configuration.",
-        }
-      }
-
-      return {
-        success: false,
-        error: error.message || "Google authentication error",
-      }
+  // Inicializar Google Drive (OBLIGATORIO)
+  async initializeForDataOnly(): Promise<void> {
+    if (!this.hasValidCredentials()) {
+      throw new Error(
+        "❌ Google Drive credentials not configured. Please set NEXT_PUBLIC_GOOGLE_API_KEY and NEXT_PUBLIC_GOOGLE_CLIENT_ID environment variables.",
+      )
     }
-  }
 
-  async initializeAfterLogin(): Promise<void> {
-    console.log("🚀 Initializing after login...")
+    console.log("🚀 Inicializando Google Drive (OBLIGATORIO)...")
 
     await this.ensureClientReady()
 
     const auth = window.gapi.auth2.getAuthInstance()
     if (!auth.isSignedIn.get()) {
+      console.log("🔐 Signing in to Google Drive...")
       await auth.signIn({
         prompt: "consent",
         ux_mode: "popup",
@@ -413,93 +350,13 @@ class GoogleDriveStorage {
     this.isSignedIn = true
     await this.setupFolderStructure()
 
-    console.log("✅ Post-login initialization complete")
-  }
-
-  async loadUsersOnly(): Promise<any[]> {
-    try {
-      if (!this.isInitialized) {
-        await this.ensureClientReady()
-      }
-
-      console.log("📂 Loading users from Drive...")
-
-      // Look for users file in root or data folder
-      let usersFile = await this.findFile("users.json", "root")
-
-      if (!usersFile) {
-        // Look in data folder if it exists
-        const dataFolder =
-          (await this.findFolder("Data", "root")) || (await this.findFolder("Panta Rei Project", "root"))
-        if (dataFolder) {
-          const subDataFolder = await this.findFolder("Data", dataFolder.id)
-          if (subDataFolder) {
-            usersFile = await this.findFile("users.json", subDataFolder.id)
-          }
-        }
-      }
-
-      if (!usersFile) {
-        console.log("📝 users.json file not found, returning empty array")
-        return []
-      }
-
-      const response = await window.gapi.client.drive.files.get({
-        fileId: usersFile.id,
-        alt: "media",
-      })
-
-      const users = JSON.parse(response.body) || []
-      console.log(`✅ Loaded ${users.length} users from Drive`)
-      return users
-    } catch (error) {
-      console.error("❌ Error loading users:", error)
-      return []
-    }
-  }
-
-  async saveUsersOnly(users: any[]): Promise<void> {
-    try {
-      if (!this.isInitialized) {
-        await this.ensureClientReady()
-      }
-
-      console.log("💾 Saving users to Drive...")
-
-      const jsonData = JSON.stringify(users, null, 2)
-      const blob = new Blob([jsonData], { type: "application/json" })
-      const file = new File([blob], "users.json", { type: "application/json" })
-
-      // Look for existing file
-      let existingFile = await this.findFile("users.json", "root")
-
-      if (!existingFile) {
-        const dataFolder =
-          (await this.findFolder("Data", "root")) || (await this.findFolder("Panta Rei Project", "root"))
-        if (dataFolder) {
-          const subDataFolder = await this.findFolder("Data", dataFolder.id)
-          if (subDataFolder) {
-            existingFile = await this.findFile("users.json", subDataFolder.id)
-          }
-        }
-      }
-
-      if (existingFile) {
-        await this.updateFile(existingFile.id, file)
-        console.log("✅ Users file updated")
-      } else {
-        // Create in root if no data folder exists
-        await this.uploadFile(file, "users.json", "root")
-        console.log("✅ Users file created")
-      }
-    } catch (error) {
-      console.error("❌ Error saving users:", error)
-      throw error
-    }
+    console.log("✅ Google Drive initialized successfully")
   }
 
   async uploadFile(file: File, fileName: string, folderId?: string): Promise<string> {
-    if (!this.isInitialized) await this.initializeAfterLogin()
+    if (!this.isInitialized || !this.isSignedIn) {
+      throw new Error("❌ Google Drive not initialized. Please connect to Google Drive first.")
+    }
 
     const metadata = { name: fileName, parents: folderId ? [folderId] : undefined }
     const form = new FormData()
@@ -524,77 +381,62 @@ class GoogleDriveStorage {
   }
 
   async saveData(fileName: string, data: any): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initializeAfterLogin()
+    if (!this.isInitialized || !this.isSignedIn) {
+      throw new Error("❌ Google Drive not connected. Cannot save data without cloud storage.")
     }
 
     await this.validateAndRefreshToken()
 
-    try {
-      const jsonData = JSON.stringify(data, null, 2)
-      const blob = new Blob([jsonData], { type: "application/json" })
-      const file = new File([blob], fileName, { type: "application/json" })
+    const jsonData = JSON.stringify(data, null, 2)
+    const blob = new Blob([jsonData], { type: "application/json" })
+    const file = new File([blob], fileName, { type: "application/json" })
 
-      // Check if file already exists
-      const existingFile = await this.findFile(fileName, this.folderIds.data)
+    // Check if file already exists
+    const existingFile = await this.findFile(fileName, this.folderIds.data)
 
-      if (existingFile) {
-        await this.updateFile(existingFile.id, file)
-      } else {
-        await this.uploadFile(file, fileName, this.folderIds.data)
-      }
-
-      console.log(`✅ Data saved: ${fileName}`)
-    } catch (error) {
-      console.error(`❌ Error saving data ${fileName}:`, error)
-      throw new Error(`SAVE_DATA_ERROR: Error saving ${fileName}: ${error}`)
+    if (existingFile) {
+      await this.updateFile(existingFile.id, file)
+    } else {
+      await this.uploadFile(file, fileName, this.folderIds.data)
     }
+
+    console.log(`✅ Data saved to Google Drive: ${fileName}`)
   }
 
   async loadData(fileName: string): Promise<any> {
-    if (!this.isInitialized) {
-      await this.initializeAfterLogin()
+    if (!this.isInitialized || !this.isSignedIn) {
+      throw new Error("❌ Google Drive not connected. Cannot load data without cloud storage.")
     }
 
     await this.validateAndRefreshToken()
 
-    try {
-      const file = await this.findFile(fileName, this.folderIds.data)
-      if (!file) {
-        console.log(`📝 File ${fileName} not found`)
-        return null
-      }
-
-      const response = await window.gapi.client.drive.files.get({
-        fileId: file.id,
-        alt: "media",
-      })
-
-      const data = JSON.parse(response.body)
-      console.log(`✅ Data loaded: ${fileName}`)
-      return data
-    } catch (error) {
-      console.error(`❌ Error loading data ${fileName}:`, error)
+    const file = await this.findFile(fileName, this.folderIds.data)
+    if (!file) {
+      console.log(`📝 File ${fileName} not found in Google Drive`)
       return null
     }
+
+    const response = await window.gapi.client.drive.files.get({
+      fileId: file.id,
+      alt: "media",
+    })
+
+    const data = JSON.parse(response.body)
+    console.log(`✅ Data loaded from Google Drive: ${fileName}`)
+    return data
   }
 
   async deleteFile(fileId: string): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initializeAfterLogin()
+    if (!this.isInitialized || !this.isSignedIn) {
+      throw new Error("❌ Google Drive not connected. Cannot delete files without cloud storage.")
     }
 
     await this.validateAndRefreshToken()
 
-    try {
-      await window.gapi.client.drive.files.delete({
-        fileId: fileId,
-      })
-      console.log("✅ File deleted successfully")
-    } catch (error) {
-      console.error("❌ Error deleting file:", error)
-      throw new Error(`DELETE_ERROR: Error deleting file: ${error}`)
-    }
+    await window.gapi.client.drive.files.delete({
+      fileId: fileId,
+    })
+    console.log("✅ File deleted successfully")
   }
 
   getFileUrl(fileId: string): string {
@@ -607,17 +449,6 @@ class GoogleDriveStorage {
 
   getFolderIds() {
     return this.folderIds
-  }
-
-  async reconnect(): Promise<void> {
-    console.log("🔄 Reconnecting to Google Drive...")
-    this.isInitialized = false
-    this.isSignedIn = false
-    this.initializationPromise = null
-    localStorage.removeItem("googleAccessToken")
-    localStorage.removeItem("googleTokenExpiry")
-
-    await this.initializeAfterLogin()
   }
 
   isConnected(): boolean {
