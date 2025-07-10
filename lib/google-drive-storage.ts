@@ -15,17 +15,38 @@ class GoogleDriveStorage {
 
   constructor(config: GoogleDriveConfig) {
     this.config = config
-    // Logs de diagnóstico
+    // Logs de diagnóstico mejorados
+    const isDev = process.env.NODE_ENV === "development"
+    const isProduction = typeof window !== "undefined" && window.location.hostname !== "localhost"
+
     console.table({
-      "API Key": this.config.apiKey?.slice(0, 8) || "⛔️",
-      "Client ID": this.config.clientId?.slice(0, 12) || "⛔️",
-      Origin: typeof window !== "undefined" ? window.location.origin : "SSR",
+      Environment: process.env.NODE_ENV || "unknown",
+      Hostname: typeof window !== "undefined" ? window.location.hostname : "SSR",
+      "API Key": this.config.apiKey ? `${this.config.apiKey.slice(0, 8)}...` : "❌ MISSING",
+      "Client ID": this.config.clientId ? `${this.config.clientId.slice(0, 12)}...` : "❌ MISSING",
+      "API Key Format": this.config.apiKey?.startsWith("AIza") ? "✅ Valid" : "❌ Invalid",
+      "Client ID Format": this.config.clientId?.includes(".apps.googleusercontent.com") ? "✅ Valid" : "❌ Invalid",
     })
+
+    // Advertencias específicas para producción
+    if (isProduction && (!this.config.apiKey || !this.config.clientId)) {
+      console.error(`
+🚨 CONFIGURACIÓN FALTANTE EN PRODUCCIÓN:
+${!this.config.apiKey ? "❌ NEXT_PUBLIC_GOOGLE_API_KEY no configurada" : ""}
+${!this.config.clientId ? "❌ NEXT_PUBLIC_GOOGLE_CLIENT_ID no configurada" : ""}
+
+📋 PASOS PARA SOLUCIONARLO:
+1. Ve a https://app.netlify.com
+2. Selecciona tu sitio
+3. Ve a Site settings > Environment variables
+4. Agrega las variables de entorno necesarias
+5. Redespliega el sitio
+      `)
+    }
   }
 
   /* ───────────────────────── HELPERS ───────────────────────── */
 
-  // ✅ MÉTODO CORREGIDO: loadGoogleApi (consistente en todo el archivo)
   private loadGoogleApi(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (window.gapi) return resolve()
@@ -57,24 +78,37 @@ class GoogleDriveStorage {
         scope: this.config.scope,
       })
       .catch((error: any) => {
-        // Origin NO autorizado → mensaje claro
-        if (error?.error === "idpiframe_initialization_failed" || /has not been registered/iu.test(error?.details)) {
+        // Mensajes de error más específicos
+        if (error?.error === "idpiframe_initialization_failed") {
           const origin = window.location.origin
           throw new Error(
-            `GAPI_INIT_ERROR: El dominio "${origin}" no está autorizado.\n` +
-              `Añádelo en Google Cloud Console → OAuth 2.0 Client ID → "Authorized JavaScript origins".`,
+            `🚨 DOMINIO NO AUTORIZADO: "${origin}"\n\n` +
+              `📋 SOLUCIÓN:\n` +
+              `1. Ve a https://console.cloud.google.com\n` +
+              `2. APIs & Services > Credentials\n` +
+              `3. Edita tu OAuth 2.0 Client ID\n` +
+              `4. Agrega "${origin}" en "Authorized JavaScript origins"\n` +
+              `5. Guarda los cambios`,
           )
         }
-        throw new Error(`GAPI_INIT_ERROR: ${error?.details || error?.message || "Unknown error"}`)
+
+        if (/has not been registered/i.test(error?.details || "")) {
+          throw new Error(
+            `🚨 APLICACIÓN NO REGISTRADA\n\n` +
+              `El Client ID no está registrado para este dominio.\n` +
+              `Verifica la configuración en Google Cloud Console.`,
+          )
+        }
+
+        throw new Error(`GAPI_INIT_ERROR: ${error?.details || error?.message || "Error desconocido"}`)
       })
   }
 
-  private async ensureClientReady(): Promise<void> {
+  private async ensureClientReady() {
     if (this.isInitialized) return
     if (this.initializationPromise) return this.initializationPromise
 
     this.initializationPromise = (async () => {
-      // ✅ CORRECTO: loadGoogleApi (consistente)
       await this.loadGoogleApi()
       await this.loadGapiModules()
       await this.initGapiClient()
@@ -173,14 +207,31 @@ class GoogleDriveStorage {
 
   /** Verifica formato de credenciales y carga gapi sin iniciar sesión */
   async quickInit(): Promise<boolean> {
-    if (!this.config.apiKey?.startsWith("AIza") || !this.config.clientId?.includes(".apps.googleusercontent.com")) {
+    // Verificación más estricta
+    if (!this.config.apiKey || !this.config.clientId) {
+      console.error("❌ Credenciales faltantes:", {
+        apiKey: !!this.config.apiKey,
+        clientId: !!this.config.clientId,
+      })
       return false
     }
+
+    if (!this.config.apiKey.startsWith("AIza")) {
+      console.error("❌ Formato de API Key inválido")
+      return false
+    }
+
+    if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
+      console.error("❌ Formato de Client ID inválido")
+      return false
+    }
+
     try {
       await this.ensureClientReady()
+      console.log("✅ Google Drive inicializado correctamente")
       return true
-    } catch (e) {
-      console.error(e)
+    } catch (error) {
+      console.error("❌ Error inicializando Google Drive:", error)
       return false
     }
   }
@@ -195,6 +246,7 @@ class GoogleDriveStorage {
         await auth.signIn({ prompt: "consent" })
       }
 
+      console.log("✅ Autenticación exitosa")
       return { success: true }
     } catch (error: any) {
       console.error("❌ Error en autenticación:", error)
@@ -214,13 +266,12 @@ class GoogleDriveStorage {
       await auth.signIn({ prompt: "consent" })
     }
     this.isSignedIn = true
+    console.log("✅ Google Drive completamente inicializado")
   }
 
-  // 🔄 CORREGIDO: Método para cargar usuarios sin inicialización completa
   async loadUsersOnly(): Promise<any[]> {
     try {
       if (!this.isInitialized) {
-        // ✅ CORRECTO: loadGoogleApi (consistente)
         await this.loadGoogleApi()
         await this.loadGapiModules()
         await this.initGapiClient()
@@ -254,11 +305,9 @@ class GoogleDriveStorage {
     }
   }
 
-  // 🔄 CORREGIDO: Método para guardar usuarios sin inicialización completa
   async saveUsersOnly(users: any[]): Promise<void> {
     try {
       if (!this.isInitialized) {
-        // ✅ CORRECTO: loadGoogleApi (consistente)
         await this.loadGoogleApi()
         await this.loadGapiModules()
         await this.initGapiClient()
@@ -425,6 +474,7 @@ class GoogleDriveStorage {
       },
       environment: {
         nodeEnv: process.env.NODE_ENV,
+        hostname: typeof window !== "undefined" ? window.location.hostname : "SSR",
         hasApiKeyEnv: !!process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
         hasClientIdEnv: !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
       },
