@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 interface GoogleDriveConfig {
   apiKey: string
   clientId: string
@@ -9,236 +10,36 @@ class GoogleDriveStorage {
   private config: GoogleDriveConfig
   private isInitialized = false
   private isSignedIn = false
-  private folderIds: { [key: string]: string } = {}
+  private folderIds: Record<string, string> = {}
   private initializationPromise: Promise<void> | null = null
 
   constructor(config: GoogleDriveConfig) {
     this.config = config
 
-    // 🔍 DIAGNÓSTICO: Verificar variables de entorno al instanciar
+    // 🔍 DIAGNÓSTICO mejorado con info del dominio
     console.log("🔧 DIAGNÓSTICO DE CONFIGURACIÓN:")
     console.log("🔑 API Key:", this.config.apiKey ? `${this.config.apiKey.substring(0, 10)}...` : "❌ VACÍO")
     console.log("🔑 Client ID:", this.config.clientId ? `${this.config.clientId.substring(0, 15)}...` : "❌ VACÍO")
-    console.log("🌍 Variables de entorno disponibles:")
-    console.log(
-      "   - NEXT_PUBLIC_GOOGLE_API_KEY:",
-      process.env.NEXT_PUBLIC_GOOGLE_API_KEY ? "✅ Disponible" : "❌ No disponible",
-    )
-    console.log(
-      "   - NEXT_PUBLIC_GOOGLE_CLIENT_ID:",
-      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? "✅ Disponible" : "❌ No disponible",
-    )
-  }
+    console.log("🌍 Dominio actual:", typeof window !== "undefined" ? window.location.origin : "SSR")
+    console.log("🎯 Dominio configurado:", process.env.NEXT_PUBLIC_APP_URL || "No configurado")
 
-  // 🔄 NUEVO: Verificar si hay una sesión previa sin inicializar Drive
-  hasStoredSession(): boolean {
-    const token = localStorage.getItem("googleAccessToken")
-    const expiry = localStorage.getItem("googleTokenExpiry")
+    // Verificar si estamos en el dominio correcto
+    if (typeof window !== "undefined") {
+      const currentOrigin = window.location.origin
+      const configuredDomain = process.env.NEXT_PUBLIC_APP_URL
 
-    if (!token || !expiry) {
-      return false
-    }
-
-    // Verificar si el token no ha expirado
-    const expiryTime = Number.parseInt(expiry)
-    const now = Date.now()
-
-    return expiryTime > now
-  }
-
-  // 🔄 NUEVO: Inicialización ligera solo para verificar credenciales
-  async quickInit(): Promise<boolean> {
-    try {
-      console.log("🔍 Verificación rápida de credenciales...")
-
-      if (!this.config.apiKey || !this.config.clientId) {
-        console.log("❌ Credenciales no configuradas")
-        return false
+      if (configuredDomain && currentOrigin !== configuredDomain) {
+        console.warn("⚠️ ADVERTENCIA: Dominio actual no coincide con el configurado")
+        console.log(`   Actual: ${currentOrigin}`)
+        console.log(`   Configurado: ${configuredDomain}`)
+        console.log("   Esto puede causar problemas de OAuth")
       }
-
-      if (!this.config.apiKey.startsWith("AIza")) {
-        console.log("❌ API Key tiene formato incorrecto")
-        return false
-      }
-
-      if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
-        console.log("❌ Client ID tiene formato incorrecto")
-        return false
-      }
-
-      // Cargar Google API si no está cargada
-      if (!window.gapi) {
-        await this.loadGoogleAPI()
-      }
-
-      // Cargar módulos si no están cargados
-      if (!window.gapi.client || !window.gapi.auth2) {
-        await this.loadGapiModules()
-      }
-
-      // Intentar inicializar cliente para verificar credenciales
-      await this.loadGapiClient()
-
-      console.log("✅ Credenciales válidas y cliente inicializado")
-      return true
-    } catch (error) {
-      console.error("❌ Error en verificación rápida:", error)
-      return false
     }
   }
 
-  async initialize(): Promise<void> {
-    // Evitar múltiples inicializaciones simultáneas
-    if (this.initializationPromise) {
-      return this.initializationPromise
-    }
+  /* ───────────────────────── HELPERS ───────────────────────── */
 
-    if (this.isInitialized) {
-      return
-    }
-
-    this.initializationPromise = this._initialize()
-    return this.initializationPromise
-  }
-
-  private async _initialize(): Promise<void> {
-    try {
-      // 🔍 VERIFICACIÓN DETALLADA DE CONFIGURACIÓN
-      console.log("🚀 Iniciando verificación de configuración...")
-
-      if (!this.config.apiKey) {
-        console.error("❌ API Key no disponible")
-        console.log("📝 Verifica que tu .env.local contenga:")
-        console.log("   NEXT_PUBLIC_GOOGLE_API_KEY=AIzaSyCN7raK6IalaNq6uk4cYrX2C6PtgV8QLeM")
-        throw new Error(
-          "CONFIGURACION_INCOMPLETA: API Key no configurada. Verifica tu archivo .env.local y reinicia el servidor",
-        )
-      }
-
-      if (!this.config.clientId) {
-        console.error("❌ Client ID no disponible")
-        console.log("📝 Verifica que tu .env.local contenga:")
-        console.log(
-          "   NEXT_PUBLIC_GOOGLE_CLIENT_ID=313408819854-5b9pmj1i4nk2dhoauh3ah8kkq48d2s7b.apps.googleusercontent.com",
-        )
-        throw new Error(
-          "CONFIGURACION_INCOMPLETA: Client ID no configurado. Verifica tu archivo .env.local y reinicia el servidor",
-        )
-      }
-
-      // Verificar formato de las credenciales
-      if (!this.config.apiKey.startsWith("AIza")) {
-        console.error("❌ API Key tiene formato incorrecto")
-        throw new Error("CONFIGURACION_INCORRECTA: API Key debe comenzar con 'AIza'")
-      }
-
-      if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
-        console.error("❌ Client ID tiene formato incorrecto")
-        throw new Error("CONFIGURACION_INCORRECTA: Client ID debe terminar con '.apps.googleusercontent.com'")
-      }
-
-      console.log("✅ Configuración verificada correctamente")
-
-      // Cargar la API de Google
-      await this.loadGoogleAPI()
-
-      if (!window.gapi) {
-        throw new Error("GAPI_NO_DISPONIBLE: Google API no se cargó correctamente")
-      }
-
-      // Cargar módulos necesarios
-      await this.loadGapiModules()
-
-      // Inicializar cliente usando el nuevo método
-      await this.loadGapiClient()
-
-      // Verificar estado de autenticación
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      if (!authInstance) {
-        throw new Error("AUTH_INSTANCE_ERROR: No se pudo obtener la instancia de autenticación")
-      }
-
-      this.isSignedIn = authInstance.isSignedIn.get()
-
-      if (!this.isSignedIn) {
-        await this.signIn()
-      } else {
-        await this.validateAndRefreshToken()
-      }
-
-      await this.createFolderStructure()
-      this.isInitialized = true
-
-      console.log("✅ Google Drive inicializado correctamente")
-    } catch (error) {
-      console.error("❌ Error inicializando Google Drive:", error)
-      this.initializationPromise = null
-      throw error
-    }
-  }
-
-  // 🔄 MODIFICADO: Inicialización completa solo después del login
-  async initializeAfterLogin(): Promise<void> {
-    if (this.initializationPromise) {
-      return this.initializationPromise
-    }
-
-    if (this.isInitialized) {
-      return
-    }
-
-    this.initializationPromise = this._initializeComplete()
-    return this.initializationPromise
-  }
-
-  private async _initializeComplete(): Promise<void> {
-    try {
-      console.log("🚀 Inicializando Google Drive después del login...")
-
-      // Cargar la API de Google
-      await this.loadGoogleAPI()
-
-      if (!window.gapi) {
-        throw new Error("GAPI_NO_DISPONIBLE: Google API no se cargó correctamente")
-      }
-
-      // Cargar módulos necesarios
-      await this.loadGapiModules()
-
-      // Inicializar cliente usando el nuevo método
-      await this.loadGapiClient()
-
-      // Verificar estado de autenticación
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      if (!authInstance) {
-        throw new Error("AUTH_INSTANCE_ERROR: No se pudo obtener la instancia de autenticación")
-      }
-
-      this.isSignedIn = authInstance.isSignedIn.get()
-
-      if (!this.isSignedIn) {
-        const storedToken = localStorage.getItem("googleAccessToken")
-        if (storedToken && this.hasStoredSession()) {
-          console.log("🔄 Restaurando sesión desde token guardado...")
-        } else {
-          await this.signIn()
-        }
-      } else {
-        await this.validateAndRefreshToken()
-      }
-
-      await this.createFolderStructure()
-      this.isInitialized = true
-
-      console.log("✅ Google Drive inicializado completamente")
-    } catch (error) {
-      console.error("❌ Error inicializando Google Drive:", error)
-      this.initializationPromise = null
-      throw error
-    }
-  }
-
-  private loadGoogleAPI(): Promise<void> {
+  private loadGoogleApi(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (window.gapi) {
         console.log("✅ Google API ya está cargada")
@@ -254,7 +55,6 @@ class GoogleDriveStorage {
 
       script.onload = () => {
         console.log("✅ Script de Google API cargado")
-        // Verificar que gapi esté realmente disponible
         if (window.gapi) {
           resolve()
         } else {
@@ -267,7 +67,6 @@ class GoogleDriveStorage {
         reject(new Error("GAPI_SCRIPT_ERROR: No se pudo cargar el script de Google API"))
       }
 
-      // Timeout de 10 segundos
       setTimeout(() => {
         reject(new Error("GAPI_TIMEOUT: Timeout cargando Google API"))
       }, 10000)
@@ -305,7 +104,6 @@ class GoogleDriveStorage {
         return reject(new Error("GAPI no disponible"))
       }
 
-      // Verificar que los módulos estén cargados
       if (!window.gapi.client || !window.gapi.auth2) {
         return reject(new Error("Módulos de GAPI no están cargados"))
       }
@@ -328,10 +126,24 @@ class GoogleDriveStorage {
 
           let errorMessage = "Error desconocido"
 
-          if (error.details) {
-            const details = error.details
-            console.log("📋 Detalles del error:", details)
+          // 🎯 MEJORADO: Mensaje específico para dominio no autorizado
+          if (error?.error === "idpiframe_initialization_failed" || /has not been registered/i.test(error?.details)) {
+            const currentOrigin = window.location.origin
+            const configuredDomain = process.env.NEXT_PUBLIC_APP_URL
 
+            errorMessage = `El dominio "${currentOrigin}" no está autorizado en Google Cloud Console.\n\n`
+
+            if (configuredDomain && currentOrigin !== configuredDomain) {
+              errorMessage += `🎯 Solución recomendada:\n`
+              errorMessage += `1. Accede a tu app desde: ${configuredDomain}\n`
+              errorMessage += `2. O autoriza "${currentOrigin}" en Google Cloud Console\n\n`
+            }
+
+            errorMessage += `📝 Para autorizar el dominio:\n`
+            errorMessage += `1. Ve a Google Cloud Console → OAuth 2.0 Client ID\n`
+            errorMessage += `2. Añade "${currentOrigin}" en "Authorized JavaScript origins"`
+          } else if (error.details) {
+            const details = error.details
             if (details.includes("invalid_client") || details.includes("unauthorized_client")) {
               errorMessage = "Client ID inválido o no autorizado. Verifica NEXT_PUBLIC_GOOGLE_CLIENT_ID"
             } else if (details.includes("origin_mismatch")) {
@@ -350,164 +162,17 @@ class GoogleDriveStorage {
     })
   }
 
-  async signIn(): Promise<void> {
-    try {
-      console.log("🔐 Iniciando proceso de autenticación...")
-
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      if (!authInstance) {
-        throw new Error("AUTH_INSTANCE_NULL: Instancia de autenticación no disponible")
-      }
-
-      const googleUser = await authInstance.signIn({
-        prompt: "consent", // Forzar pantalla de consentimiento
-      })
-
-      this.isSignedIn = true
-
-      // Guardar información del usuario
-      const authResponse = googleUser.getAuthResponse()
-      localStorage.setItem("googleAccessToken", authResponse.access_token)
-      localStorage.setItem("googleTokenExpiry", (Date.now() + authResponse.expires_in * 1000).toString())
-
-      console.log("✅ Autenticación exitosa con Google Drive")
-    } catch (error: any) {
-      console.error("❌ Error durante el login con Google:", error)
-
-      // Manejo específico de errores de autenticación
-      if (error.error === "popup_closed_by_user") {
-        throw new Error("POPUP_CERRADO: Necesitas completar la autorización de Google Drive para continuar")
-      } else if (error.error === "access_denied") {
-        throw new Error("ACCESO_DENEGADO: Acceso denegado. La aplicación necesita permisos de Google Drive")
-      } else if (error.error === "invalid_client") {
-        throw new Error("CLIENT_INVALIDO: Configuración de cliente inválida. Verifica las credenciales")
-      } else if (error.error === "unauthorized_client") {
-        throw new Error("CLIENT_NO_AUTORIZADO: Cliente no autorizado. Verifica la configuración en Google Console")
-      } else if (error.error === "invalid_scope") {
-        throw new Error("SCOPE_INVALIDO: Permisos inválidos. Verifica la configuración de scopes")
-      } else {
-        throw new Error(`AUTH_ERROR: Error de autenticación: ${error.error || error.message || "Error desconocido"}`)
-      }
-    }
-  }
-
-  async validateAndRefreshToken(): Promise<void> {
-    try {
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      const currentUser = authInstance.currentUser.get()
-
-      if (!currentUser.isSignedIn()) {
-        await this.signIn()
-        return
-      }
-
-      // Verificar si el token está por expirar (renovar si faltan menos de 5 minutos)
-      const authResponse = currentUser.getAuthResponse()
-      const expiresAt = authResponse.expires_at
-      const now = Date.now()
-
-      if (expiresAt - now < 5 * 60 * 1000) {
-        // 5 minutos
-        console.log("🔄 Renovando token de Google Drive...")
-        const newAuthResponse = await currentUser.reloadAuthResponse()
-        localStorage.setItem("googleAccessToken", newAuthResponse.access_token)
-        localStorage.setItem("googleTokenExpiry", newAuthResponse.expires_at.toString())
-        console.log("✅ Token renovado exitosamente")
-      }
-    } catch (error) {
-      console.error("❌ Error validando token:", error)
-      // Si hay error, intentar login nuevamente
-      await this.signIn()
-    }
-  }
-
-  async createFolderStructure(): Promise<void> {
-    try {
-      console.log("📁 Creando estructura de carpetas...")
-
-      // Crear carpeta principal
-      const mainFolder = await this.createFolder("Panta Rei Project", "root")
-      this.folderIds.main = mainFolder.id
-
-      // Crear subcarpetas
-      const dataFolder = await this.createFolder("Datos", mainFolder.id)
-      const photosFolder = await this.createFolder("Fotos", mainFolder.id)
-      const songsFolder = await this.createFolder("Canciones", mainFolder.id)
-      const audioFolder = await this.createFolder("Audio", songsFolder.id)
-      const coversFolder = await this.createFolder("Portadas", songsFolder.id)
-
-      this.folderIds.data = dataFolder.id
-      this.folderIds.photos = photosFolder.id
-      this.folderIds.songs = songsFolder.id
-      this.folderIds.audio = audioFolder.id
-      this.folderIds.covers = coversFolder.id
-
-      console.log("✅ Estructura de carpetas creada:", this.folderIds)
-    } catch (error) {
-      console.error("❌ Error creando estructura de carpetas:", error)
-      throw new Error(`FOLDER_STRUCTURE_ERROR: Error creando carpetas: ${error}`)
-    }
-  }
-
-  private async createFolder(name: string, parentId: string): Promise<any> {
-    try {
-      // Verificar si la carpeta ya existe
-      const existingFolder = await this.findFolder(name, parentId)
-      if (existingFolder) {
-        console.log(`📁 Carpeta "${name}" ya existe`)
-        return existingFolder
-      }
-
-      console.log(`📁 Creando carpeta "${name}"...`)
-
-      // Crear nueva carpeta usando gapi.client
-      const response = await window.gapi.client.drive.files.create({
-        resource: {
-          name: name,
-          mimeType: "application/vnd.google-apps.folder",
-          parents: [parentId],
-        },
-      })
-
-      console.log(`✅ Carpeta "${name}" creada exitosamente`)
-      return response.result
-    } catch (error: any) {
-      console.error(`❌ Error creando carpeta ${name}:`, error)
-
-      if (error.status === 403) {
-        throw new Error(`PERMISSION_DENIED: Sin permisos para crear carpeta ${name}`)
-      } else if (error.status === 401) {
-        throw new Error(`UNAUTHORIZED: Token expirado o inválido`)
-      }
-
-      throw error
-    }
-  }
-
-  private async findFolder(name: string, parentId: string): Promise<any> {
-    try {
-      const response = await window.gapi.client.drive.files.list({
-        q: `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-        fields: "files(id, name)",
-      })
-
-      return response.result.files?.[0] || null
-    } catch (error) {
-      console.error(`❌ Error buscando carpeta ${name}:`, error)
-      return null
-    }
-  }
-
   // 🔄 NUEVO: Método simple para autenticación sin inicialización completa
   async authenticateOnly(): Promise<{ success: boolean; user?: any; error?: string }> {
     try {
       console.log("🔐 Iniciando autenticación simple...")
 
       // Verificar credenciales básicas
-      if (!this.config.apiKey || !this.config.clientId) {
+      const credentialsValid = await this.quickInit()
+      if (!credentialsValid) {
         return {
           success: false,
-          error: "Credenciales de Google Drive no configuradas correctamente",
+          error: "Credenciales de Google Drive no configuradas correctamente o dominio no autorizado",
         }
       }
 
@@ -572,47 +237,110 @@ class GoogleDriveStorage {
     }
   }
 
-  async uploadFile(file: File, fileName: string, folderId?: string): Promise<string> {
-    if (!this.isInitialized) {
-      await this.initializeAfterLogin()
+  // 🔄 NUEVO: Verificar si hay una sesión previa sin inicializar Drive
+  hasStoredSession(): boolean {
+    const token = localStorage.getItem("googleAccessToken")
+    const expiry = localStorage.getItem("googleTokenExpiry")
+
+    if (!token || !expiry) {
+      return false
     }
 
-    await this.validateAndRefreshToken()
+    const expiryTime = Number.parseInt(expiry)
+    const now = Date.now()
 
+    return expiryTime > now
+  }
+
+  private async ensureClientReady() {
+    if (this.isInitialized) return
+    if (this.initializationPromise) return this.initializationPromise
+
+    this.initializationPromise = (async () => {
+      await this.loadGoogleApi()
+      await this.loadGapiModules()
+      await this.loadGapiClient()
+      this.isInitialized = true
+    })()
+
+    return this.initializationPromise
+  }
+
+  /* ───────────────────────── PUBLIC API ───────────────────────── */
+
+  /** Verifica formato de credenciales y carga gapi sin iniciar sesión */
+  async quickInit(): Promise<boolean> {
     try {
-      const metadata = {
-        name: fileName,
-        parents: folderId ? [folderId] : [this.folderIds.main || "root"],
+      console.log("🔍 Verificación rápida de credenciales...")
+
+      if (!this.config.apiKey || !this.config.clientId) {
+        console.log("❌ Credenciales no configuradas")
+        return false
       }
 
-      const form = new FormData()
-      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }))
-      form.append("file", file)
-
-      const authInstance = window.gapi.auth2.getAuthInstance()
-      const accessToken = authInstance.currentUser.get().getAuthResponse().access_token
-
-      const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: form,
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`UPLOAD_ERROR: Error subiendo archivo (${response.status}): ${errorText}`)
+      if (!this.config.apiKey.startsWith("AIza")) {
+        console.log("❌ API Key tiene formato incorrecto")
+        return false
       }
 
-      const result = await response.json()
-      return result.id
+      if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
+        console.log("❌ Client ID tiene formato incorrecto")
+        return false
+      }
+
+      // Verificar dominio si está configurado
+      if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_APP_URL) {
+        const currentOrigin = window.location.origin
+        const configuredDomain = process.env.NEXT_PUBLIC_APP_URL
+
+        if (currentOrigin !== configuredDomain) {
+          console.warn("⚠️ Dominio no autorizado para OAuth")
+          console.log(`Esperado: ${configuredDomain}`)
+          console.log(`Actual: ${currentOrigin}`)
+          return false
+        }
+      }
+
+      console.log("✅ Credenciales válidas")
+      return true
     } catch (error) {
-      console.error("❌ Error subiendo archivo:", error)
-      throw error
+      console.error("❌ Error en verificación rápida:", error)
+      return false
     }
   }
 
+  /** Inicialización completa tras login */
+  async initializeAfterLogin(): Promise<void> {
+    await this.ensureClientReady()
+
+    const auth = window.gapi.auth2.getAuthInstance()
+    if (!auth.isSignedIn.get()) {
+      await auth.signIn({ prompt: "consent" })
+    }
+    this.isSignedIn = true
+  }
+
+  /** Ejemplo de subida de archivos */
+  async uploadFile(file: File, fileName: string, folderId?: string): Promise<string> {
+    if (!this.isInitialized) await this.initializeAfterLogin()
+
+    const metadata = { name: fileName, parents: folderId ? [folderId] : undefined }
+    const form = new FormData()
+    form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }))
+    form.append("file", file)
+
+    const token = window.gapi.auth.getToken().access_token
+    const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    })
+    if (!res.ok) throw new Error(`UPLOAD_ERROR: ${res.statusText}`)
+    const json = await res.json()
+    return json.id
+  }
+
+  /* … Resto de métodos (saveData, loadData, etc.) … */
   async saveData(fileName: string, data: any): Promise<void> {
     if (!this.isInitialized) {
       await this.initializeAfterLogin()
@@ -739,7 +467,7 @@ class GoogleDriveStorage {
     try {
       if (!this.isInitialized) {
         // Inicialización mínima solo para cargar usuarios
-        await this.loadGoogleAPI()
+        await this.loadGoogleApi()
         await this.loadGapiModules()
         await this.loadGapiClient()
       }
@@ -776,7 +504,7 @@ class GoogleDriveStorage {
   async saveUsersOnly(users: any[]): Promise<void> {
     try {
       if (!this.isInitialized) {
-        await this.loadGoogleAPI()
+        await this.loadGoogleApi()
         await this.loadGapiModules()
         await this.loadGapiClient()
       }
@@ -829,6 +557,9 @@ class GoogleDriveStorage {
       hasGapi: !!window.gapi,
       hasAuth2: !!(window.gapi && window.gapi.auth2),
       hasClient: !!(window.gapi && window.gapi.client),
+      currentOrigin: typeof window !== "undefined" ? window.location.origin : "SSR",
+      configuredDomain: process.env.NEXT_PUBLIC_APP_URL,
+      domainMatch: typeof window !== "undefined" ? window.location.origin === process.env.NEXT_PUBLIC_APP_URL : null,
       config: {
         hasApiKey: !!this.config.apiKey,
         hasClientId: !!this.config.clientId,
@@ -841,8 +572,47 @@ class GoogleDriveStorage {
         nodeEnv: process.env.NODE_ENV,
         hasApiKeyEnv: !!process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
         hasClientIdEnv: !!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+        hasAppUrlEnv: !!process.env.NEXT_PUBLIC_APP_URL,
       },
       folderIds: this.folderIds,
+    }
+  }
+
+  private async findFolder(name: string, parentId: string): Promise<any> {
+    try {
+      const response = await window.gapi.client.drive.files.list({
+        q: `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: "files(id, name)",
+      })
+
+      return response.result.files?.[0] || null
+    } catch (error) {
+      console.error(`❌ Error buscando carpeta ${name}:`, error)
+      return null
+    }
+  }
+
+  private async validateAndRefreshToken(): Promise<void> {
+    const authInstance = window.gapi.auth2.getAuthInstance()
+    if (!authInstance) {
+      throw new Error("AUTH_INSTANCE_ERROR: No se pudo obtener la instancia de autenticación")
+    }
+
+    const user = authInstance.currentUser.get()
+    if (!user) {
+      throw new Error("USER_ERROR: No se pudo obtener el usuario")
+    }
+
+    const authResponse = user.getAuthResponse()
+    if (!authResponse || !authResponse.access_token) {
+      throw new Error("TOKEN_ERROR: No se pudo obtener el token de acceso")
+    }
+
+    const now = Date.now()
+    const expiryTime = Number.parseInt(authResponse.expires_in) * 1000 + now
+    if (expiryTime < now) {
+      console.log("🔄 Token expirado, refrescando...")
+      await user.reloadAuthResponse()
     }
   }
 }
