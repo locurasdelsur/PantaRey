@@ -2,17 +2,18 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, User, Mail, Lock, UserPlus, Music, ArrowLeft } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Eye, EyeOff, User, Mail, Lock, Guitar, Cloud, RefreshCw, AlertCircle, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+import { driveStorage } from "@/lib/google-drive-storage"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -24,168 +25,285 @@ export default function RegisterPage() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [isCheckingCredentials, setIsCheckingCredentials] = useState(true)
+  const [credentialsValid, setCredentialsValid] = useState(false)
   const router = useRouter()
 
-  const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+  const instruments = [
+    { value: "guitarra", label: "Guitarra" },
+    { value: "bajo", label: "Bajo" },
+    { value: "bateria", label: "Batería" },
+    { value: "teclado", label: "Teclado" },
+    { value: "voz", label: "Voz" },
+    { value: "otro", label: "Otro" },
+  ]
+
+  // 🔄 NUEVO: Solo verificar credenciales al cargar
+  useEffect(() => {
+    checkCredentials()
+  }, [])
+
+  const checkCredentials = async () => {
+    try {
+      setIsCheckingCredentials(true)
+      setError("")
+
+      const isValid = await driveStorage.quickInit()
+      setCredentialsValid(isValid)
+
+      if (!isValid) {
+        setError("⚠️ Credenciales de Google Drive no configuradas. Verifica tu archivo .env.local")
+      }
+    } catch (error) {
+      console.error("Error verificando credenciales:", error)
+      setCredentialsValid(false)
+      setError("❌ Error verificando configuración de Google Drive")
+    } finally {
+      setIsCheckingCredentials(false)
+    }
   }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
     setIsLoading(true)
+    setError("")
+
+    if (formData.password !== formData.confirmPassword) {
+      setError("Las contraseñas no coinciden")
+      setIsLoading(false)
+      return
+    }
+
+    if (formData.password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres")
+      setIsLoading(false)
+      return
+    }
 
     try {
-      // Validation
-      if (
-        !formData.name ||
-        !formData.email ||
-        !formData.password ||
-        !formData.confirmPassword ||
-        !formData.instrument
-      ) {
-        setError("Por favor completa todos los campos")
+      if (!credentialsValid) {
+        throw new Error("Credenciales de Google Drive no válidas")
+      }
+
+      // 🔄 NUEVO: Primero autenticar con Google
+      console.log("🔐 Iniciando autenticación con Google...")
+      const authResult = await driveStorage.authenticateOnly()
+
+      if (!authResult.success) {
+        throw new Error(authResult.error || "Error de autenticación con Google")
+      }
+
+      console.log("✅ Autenticación con Google exitosa")
+
+      // 🔄 NUEVO: Cargar usuarios existentes
+      console.log("📂 Verificando usuarios existentes...")
+      const users = await driveStorage.loadUsersOnly()
+
+      // Verificar si el email ya existe
+      if (users.find((u: any) => u.email === formData.email)) {
+        setError("Ya existe un usuario con este email")
+        setIsLoading(false)
         return
       }
 
-      if (formData.password !== formData.confirmPassword) {
-        setError("Las contraseñas no coinciden")
-        return
+      const newUser = {
+        id: Date.now(),
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        instrument: formData.instrument,
+        joinDate: new Date().toISOString(),
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=f59e0b&color=fff`,
       }
 
-      if (formData.password.length < 6) {
-        setError("La contraseña debe tener al menos 6 caracteres")
-        return
-      }
+      // 🔄 NUEVO: Guardar usuario en Drive
+      console.log("💾 Guardando usuario en Google Drive...")
+      const updatedUsers = [...users, newUser]
+      await driveStorage.saveUsersOnly(updatedUsers)
 
-      // Simulate registration logic
-      localStorage.setItem("userEmail", formData.email)
-      localStorage.setItem("userName", formData.name)
-      localStorage.setItem("userInstrument", formData.instrument)
-      localStorage.setItem("isAuthenticated", "true")
+      // Guardar usuario actual
+      localStorage.setItem("currentUser", JSON.stringify(newUser))
 
+      // 🔄 NUEVO: Inicializar Drive completamente después del registro
+      console.log("🚀 Inicializando Google Drive completamente...")
+      await driveStorage.initializeAfterLogin()
+
+      console.log("✅ Registro completado exitosamente")
       router.push("/")
-    } catch (error) {
-      setError("Error al crear la cuenta")
-    } finally {
-      setIsLoading(false)
+    } catch (error: any) {
+      console.error("❌ Error en registro:", error)
+      setError(error.message || "Error al crear la cuenta")
     }
+
+    setIsLoading(false)
+  }
+
+  // Pantalla de verificación de credenciales
+  if (isCheckingCredentials) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50 flex items-center justify-center p-4">
+        <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-xl max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
+            </div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">Verificando Configuración</h3>
+            <p className="text-slate-600 text-sm">Comprobando credenciales de Google Drive...</p>
+            <div className="flex items-center justify-center gap-2 mt-4 text-blue-600">
+              <Cloud className="h-4 w-4" />
+              <span className="text-xs">Google Drive</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Back Link */}
-        <Link href="/" className="text-slate-600 hover:text-slate-800 mb-6 inline-flex items-center gap-2 font-medium">
-          <ArrowLeft className="h-4 w-4" />
-          Volver al inicio
-        </Link>
+        {/* Logo y Header */}
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            <Image src="/logo.png" alt="Panta Rei Project" width={80} height={80} className="drop-shadow-lg" />
+          </div>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">Panta Rei Project</h1>
+          <p className="text-slate-600 flex items-center justify-center gap-2">
+            <Cloud className="h-4 w-4 text-blue-500" />
+            Únete a la banda
+          </p>
+        </div>
 
-        {/* Register Card */}
         <Card className="bg-white/90 backdrop-blur-sm border-slate-200 shadow-xl">
-          <CardHeader className="text-center pb-6">
-            <div className="flex justify-center mb-4">
-              <Image src="/logo.png" alt="Panta Rei Project" width={80} height={80} className="drop-shadow-lg" />
-            </div>
-            <CardTitle className="text-2xl font-bold text-slate-800 mb-2">Crear Cuenta</CardTitle>
-            <p className="text-slate-600">Únete a Panta Rei Project</p>
+          <CardHeader className="space-y-1 pb-6">
+            <CardTitle className="text-2xl text-center text-slate-800">Crear Cuenta</CardTitle>
+            <CardDescription className="text-center text-slate-600">
+              Tu cuenta se sincronizará con Google Drive
+            </CardDescription>
           </CardHeader>
-
           <CardContent>
+            {/* Estado de credenciales */}
+            {credentialsValid ? (
+              <Alert className="border-green-200 bg-green-50 mb-4">
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription className="text-green-600">
+                  ✅ Google Drive configurado correctamente
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert className="border-red-200 bg-red-50 mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-red-600">
+                  <div className="mb-3">{error}</div>
+                  <Button onClick={checkCredentials} size="sm" className="bg-red-600 hover:bg-red-700 text-white">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Verificar de nuevo
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <form onSubmit={handleRegister} className="space-y-4">
-              {/* Name Field */}
+              {error && credentialsValid && (
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertDescription className="text-red-600">{error}</AlertDescription>
+                </Alert>
+              )}
+
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-slate-700 font-medium">
+                <Label htmlFor="name" className="text-slate-700">
                   Nombre completo
                 </Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="name"
                     name="name"
                     type="text"
-                    autoComplete="name"
+                    placeholder="Tu nombre"
                     value={formData.name}
-                    onChange={(e) => handleChange("name", e.target.value)}
-                    placeholder="Tu nombre completo"
-                    className="pl-10 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="pl-10 bg-slate-50 border-slate-200"
+                    autoComplete="name"
                     required
+                    disabled={!credentialsValid}
                   />
                 </div>
               </div>
 
-              {/* Email Field */}
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-slate-700 font-medium">
+                <Label htmlFor="email" className="text-slate-700">
                   Email
                 </Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="email"
                     name="email"
                     type="email"
-                    autoComplete="email"
-                    value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
                     placeholder="tu@email.com"
-                    className="pl-10 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="pl-10 bg-slate-50 border-slate-200"
+                    autoComplete="email"
                     required
+                    disabled={!credentialsValid}
                   />
                 </div>
               </div>
 
-              {/* Instrument Field */}
               <div className="space-y-2">
-                <Label htmlFor="instrument" className="text-slate-700 font-medium">
+                <Label htmlFor="instrument" className="text-slate-700">
                   Instrumento principal
                 </Label>
-                <Select
-                  name="instrument"
-                  value={formData.instrument}
-                  onValueChange={(value) => handleChange("instrument", value)}
-                >
-                  <SelectTrigger className="border-slate-300 focus:border-amber-500 focus:ring-amber-500">
-                    <SelectValue placeholder="Selecciona tu instrumento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="guitarra">Guitarra</SelectItem>
-                    <SelectItem value="bajo">Bajo</SelectItem>
-                    <SelectItem value="bateria">Batería</SelectItem>
-                    <SelectItem value="voz">Voz</SelectItem>
-                    <SelectItem value="teclado">Teclado</SelectItem>
-                    <SelectItem value="violin">Violín</SelectItem>
-                    <SelectItem value="saxofon">Saxofón</SelectItem>
-                    <SelectItem value="trompeta">Trompeta</SelectItem>
-                    <SelectItem value="otro">Otro</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Guitar className="absolute left-3 top-3 h-4 w-4 text-slate-400 z-10" />
+                  <Select
+                    value={formData.instrument}
+                    onValueChange={(value) => setFormData({ ...formData, instrument: value })}
+                    disabled={!credentialsValid}
+                    name="instrument"
+                  >
+                    <SelectTrigger className="pl-10 bg-slate-50 border-slate-200">
+                      <SelectValue placeholder="Selecciona tu instrumento" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {instruments.map((instrument) => (
+                        <SelectItem key={instrument.value} value={instrument.value}>
+                          {instrument.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              {/* Password Field */}
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-slate-700 font-medium">
+                <Label htmlFor="password" className="text-slate-700">
                   Contraseña
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    value={formData.password}
-                    onChange={(e) => handleChange("password", e.target.value)}
                     placeholder="••••••••"
-                    className="pl-10 pr-10 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="pl-10 pr-10 bg-slate-50 border-slate-200"
+                    autoComplete="new-password"
                     required
+                    disabled={!credentialsValid}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    disabled={!credentialsValid}
                     aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -193,28 +311,29 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Confirm Password Field */}
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-slate-700 font-medium">
+                <Label htmlFor="confirmPassword" className="text-slate-700">
                   Confirmar contraseña
                 </Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="confirmPassword"
                     name="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    value={formData.confirmPassword}
-                    onChange={(e) => handleChange("confirmPassword", e.target.value)}
                     placeholder="••••••••"
-                    className="pl-10 pr-10 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    className="pl-10 pr-10 bg-slate-50 border-slate-200"
+                    autoComplete="new-password"
                     required
+                    disabled={!credentialsValid}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    disabled={!credentialsValid}
                     aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   >
                     {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -222,63 +341,46 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Error Message */}
-              {error && (
-                <Alert className="border-red-200 bg-red-50">
-                  <AlertDescription className="text-red-700">{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {/* Register Button */}
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-medium py-2.5"
-                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
+                disabled={isLoading || !credentialsValid}
               >
                 {isLoading ? (
                   <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Creando cuenta...
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Guardando en Drive...
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <UserPlus className="h-4 w-4" />
+                    <Cloud className="h-4 w-4" />
                     Crear Cuenta
                   </div>
                 )}
               </Button>
-
-              {/* Divider */}
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-300"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-slate-500">o</span>
-                </div>
-              </div>
-
-              {/* Login Link */}
-              <div className="text-center">
-                <p className="text-slate-600">
-                  ¿Ya tienes cuenta?{" "}
-                  <Link href="/auth/login" className="text-amber-600 hover:text-amber-700 font-medium">
-                    Inicia sesión
-                  </Link>
-                </p>
-              </div>
             </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-slate-600">
+                ¿Ya tienes cuenta?{" "}
+                <Link href="/auth/login" className="text-emerald-600 hover:text-emerald-700 font-medium">
+                  Inicia sesión aquí
+                </Link>
+              </p>
+            </div>
+
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <Cloud className="h-4 w-4 text-blue-600" />
+                <span className="text-xs font-medium text-blue-800">Almacenamiento en Google Drive</span>
+              </div>
+              <p className="text-xs text-blue-700">
+                Tu cuenta y todos los datos se guardarán automáticamente en Google Drive y serán accesibles para todos
+                los miembros de la banda.
+              </p>
+            </div>
           </CardContent>
         </Card>
-
-        {/* Footer */}
-        <div className="text-center mt-6 text-slate-500 text-sm">
-          <div className="flex items-center justify-center gap-1 mb-2">
-            <Music className="h-4 w-4" />
-            <span>Panta Rei Project</span>
-          </div>
-          <p>Gestión integral para bandas musicales</p>
-        </div>
       </div>
     </div>
   )
