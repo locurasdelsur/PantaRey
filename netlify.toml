@@ -1,0 +1,7 @@
+[build]
+  publish = ".next"  # Para Next.js (ajusta si usas otra carpeta)
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "script-src 'self' 'unsafe-eval' https://apis.google.com https://*.googleusercontent.com; connect-src 'self' https://*.googleapis.com"
