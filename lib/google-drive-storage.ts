@@ -30,6 +30,16 @@ class GoogleDriveStorage {
     )
   }
 
+  // Verificar si hay credenciales válidas
+  hasValidCredentials(): boolean {
+    return !!(
+      this.config.apiKey &&
+      this.config.clientId &&
+      this.config.apiKey.startsWith("AIza") &&
+      this.config.clientId.includes(".apps.googleusercontent.com")
+    )
+  }
+
   // 🔄 NUEVO: Verificar si hay una sesión previa sin inicializar Drive
   hasStoredSession(): boolean {
     const token = localStorage.getItem("googleAccessToken")
@@ -51,18 +61,8 @@ class GoogleDriveStorage {
     try {
       console.log("🔍 Verificación rápida de credenciales...")
 
-      if (!this.config.apiKey || !this.config.clientId) {
-        console.log("❌ Credenciales no configuradas")
-        return false
-      }
-
-      if (!this.config.apiKey.startsWith("AIza")) {
-        console.log("❌ API Key tiene formato incorrecto")
-        return false
-      }
-
-      if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
-        console.log("❌ Client ID tiene formato incorrecto")
+      if (!this.hasValidCredentials()) {
+        console.log("❌ Credenciales no válidas")
         return false
       }
 
@@ -93,35 +93,17 @@ class GoogleDriveStorage {
       // 🔍 VERIFICACIÓN DETALLADA DE CONFIGURACIÓN
       console.log("🚀 Iniciando verificación de configuración...")
 
-      if (!this.config.apiKey) {
-        console.error("❌ API Key no disponible")
-        console.log("📝 Verifica que tu .env.local contenga:")
-        console.log("   NEXT_PUBLIC_GOOGLE_API_KEY=AIzaSyCN7raK6IalaNq6uk4cYrX2C6PtgV8QLeM")
-        throw new Error(
-          "CONFIGURACION_INCOMPLETA: API Key no configurada. Verifica tu archivo .env.local y reinicia el servidor",
-        )
-      }
+      if (!this.hasValidCredentials()) {
+        const errorMsg = !this.config.apiKey
+          ? "CONFIGURACION_INCOMPLETA: API Key no configurada. Verifica tu archivo .env.local y reinicia el servidor"
+          : !this.config.clientId
+            ? "CONFIGURACION_INCOMPLETA: Client ID no configurado. Verifica tu archivo .env.local y reinicia el servidor"
+            : !this.config.apiKey.startsWith("AIza")
+              ? "CONFIGURACION_INCORRECTA: API Key debe comenzar con 'AIza'"
+              : "CONFIGURACION_INCORRECTA: Client ID debe terminar con '.apps.googleusercontent.com'"
 
-      if (!this.config.clientId) {
-        console.error("❌ Client ID no disponible")
-        console.log("📝 Verifica que tu .env.local contenga:")
-        console.log(
-          "   NEXT_PUBLIC_GOOGLE_CLIENT_ID=313408819854-5b9pmj1i4nk2dhoauh3ah8kkq48d2s7b.apps.googleusercontent.com",
-        )
-        throw new Error(
-          "CONFIGURACION_INCOMPLETA: Client ID no configurado. Verifica tu archivo .env.local y reinicia el servidor",
-        )
-      }
-
-      // Verificar formato de las credenciales
-      if (!this.config.apiKey.startsWith("AIza")) {
-        console.error("❌ API Key tiene formato incorrecto")
-        throw new Error("CONFIGURACION_INCORRECTA: API Key debe comenzar con 'AIza'")
-      }
-
-      if (!this.config.clientId.includes(".apps.googleusercontent.com")) {
-        console.error("❌ Client ID tiene formato incorrecto")
-        throw new Error("CONFIGURACION_INCORRECTA: Client ID debe terminar con '.apps.googleusercontent.com'")
+        console.error("❌", errorMsg)
+        throw new Error(errorMsg)
       }
 
       console.log("✅ Configuración verificada correctamente")
@@ -184,6 +166,29 @@ class GoogleDriveStorage {
 
     this.initializationPromise = this._initializeComplete()
     return this.initializationPromise
+  }
+
+  // 🔄 NUEVO: Inicialización solo para datos sin autenticación
+  async initializeForDataOnly(): Promise<void> {
+    try {
+      console.log("🚀 Inicializando Google Drive para datos solamente...")
+
+      if (!this.hasValidCredentials()) {
+        throw new Error("CREDENCIALES_INVALIDAS: Las credenciales de Google Drive no están configuradas correctamente")
+      }
+
+      // Cargar la API de Google
+      await this.loadGoogleAPI()
+      await this.loadGapiModules()
+      await this.initializeGapiClient()
+
+      // Marcar como inicializado para operaciones básicas
+      this.isInitialized = true
+      console.log("✅ Google Drive inicializado para datos")
+    } catch (error) {
+      console.error("❌ Error inicializando Google Drive para datos:", error)
+      throw error
+    }
   }
 
   private async _initializeComplete(): Promise<void> {
@@ -301,29 +306,40 @@ class GoogleDriveStorage {
     try {
       console.log("🔧 Inicializando cliente GAPI...")
 
-      await window.gapi.client.init({
+      const initConfig = {
         apiKey: this.config.apiKey,
         clientId: this.config.clientId,
         discoveryDocs: this.config.discoveryDocs,
         scope: this.config.scope,
-      })
+      }
+
+      await window.gapi.client.init(initConfig)
 
       console.log("✅ Cliente GAPI inicializado correctamente")
     } catch (error: any) {
       console.error("❌ Error inicializando cliente GAPI:", error)
 
-      if (error.details) {
-        const details = error.details
-        console.log("📋 Detalles del error:", details)
+      // Manejo mejorado de errores
+      let errorMessage = "Error inicializando cliente Google"
 
-        if (details.includes("invalid_client") || details.includes("unauthorized_client")) {
-          throw new Error("INVALID_CLIENT: Client ID inválido o no autorizado. Verifica NEXT_PUBLIC_GOOGLE_CLIENT_ID")
-        }
-        if (details.includes("origin_mismatch")) {
-          throw new Error("ORIGIN_MISMATCH: El dominio no está autorizado. Configura las URIs en Google Console")
+      if (error && typeof error === "object") {
+        if (error.details) {
+          const details = error.details
+          console.log("📋 Detalles del error:", details)
+
+          if (details.includes("invalid_client") || details.includes("unauthorized_client")) {
+            errorMessage = "INVALID_CLIENT: Client ID inválido o no autorizado. Verifica NEXT_PUBLIC_GOOGLE_CLIENT_ID"
+          } else if (details.includes("origin_mismatch")) {
+            errorMessage = "ORIGIN_MISMATCH: El dominio no está autorizado. Configura las URIs en Google Console"
+          }
+        } else if (error.message) {
+          errorMessage = error.message
+        } else if (error.error) {
+          errorMessage = error.error
         }
       }
-      throw new Error(`GAPI_INIT_ERROR: Error inicializando cliente Google: ${error.message}`)
+
+      throw new Error(`GAPI_INIT_ERROR: ${errorMessage}`)
     }
   }
 
