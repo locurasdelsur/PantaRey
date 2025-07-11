@@ -4,82 +4,40 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Music,
-  Calendar,
-  MessageCircle,
-  Lightbulb,
-  Camera,
-  CheckSquare,
-  Users,
-  TrendingUp,
-  Clock,
-  Star,
-} from "lucide-react"
+import { MobileNav } from "@/components/mobile-nav"
+import { UserMenu } from "@/components/user-menu"
+import { AuthGuard } from "@/components/auth-guard"
+import { DriveConnectionGuard } from "@/components/drive-connection-guard"
 import Link from "next/link"
 import Image from "next/image"
-import { AuthGuard } from "@/components/auth-guard"
-import { UserMenu } from "@/components/user-menu"
-import { MobileNav } from "@/components/mobile-nav"
-
-interface Song {
-  id: number
-  title: string
-  status: "ready" | "practicing" | "developing"
-  type: "original" | "cover"
-  lastUpdated: string
-}
-
-interface Task {
-  id: number
-  title: string
-  status: "todo" | "doing" | "done"
-  priority: "low" | "medium" | "high"
-  createdAt: string
-}
-
-interface Event {
-  id: number
-  title: string
-  type: "rehearsal" | "gig" | "recording" | "meeting"
-  date: string
-  time: string
-}
-
-interface Message {
-  id: number
-  author: string
-  content: string
-  timestamp: string
-  channel: string
-}
-
-interface Idea {
-  id: number
-  title: string
-  type: "riff" | "lyrics" | "melody" | "concept"
-  author: string
-  createdAt: string
-  likes: number
-}
-
-interface PhotoSession {
-  id: number
-  date: string
-  title: string
-  photos: any[]
-}
+import {
+  Music2,
+  Calendar,
+  CheckSquare,
+  Camera,
+  MessageCircle,
+  Lightbulb,
+  Users,
+  Clock,
+  MapPin,
+  Navigation,
+  Globe,
+  Zap,
+  TrendingUp,
+} from "lucide-react"
 
 export default function Dashboard() {
-  const [songs, setSongs] = useState<Song[]>([])
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [events, setEvents] = useState<Event[]>([])
-  const [messages, setMessages] = useState<Message[]>([])
-  const [ideas, setIdeas] = useState<Idea[]>([])
-  const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([])
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [stats, setStats] = useState({
+    songs: 0,
+    events: 0,
+    tasks: 0,
+    photos: 0,
+    ideas: 0,
+    venues: 0,
+    gisPoints: 0,
+  })
 
-  // Cargar datos globales compartidos
   useEffect(() => {
     // Cargar usuario actual
     const user = localStorage.getItem("currentUser")
@@ -87,515 +45,398 @@ export default function Dashboard() {
       setCurrentUser(JSON.parse(user))
     }
 
-    // Cargar datos globales (compartidos entre todos los usuarios)
-    const loadGlobalData = () => {
-      try {
-        const savedSongs = localStorage.getItem("globalBandSongs")
-        if (savedSongs) setSongs(JSON.parse(savedSongs))
-
-        const savedTasks = localStorage.getItem("globalBandTasks")
-        if (savedTasks) setTasks(JSON.parse(savedTasks))
-
-        const savedEvents = localStorage.getItem("globalBandEvents")
-        if (savedEvents) setEvents(JSON.parse(savedEvents))
-
-        const savedMessages = localStorage.getItem("globalBandMessages")
-        if (savedMessages) setMessages(JSON.parse(savedMessages))
-
-        const savedIdeas = localStorage.getItem("globalBandIdeas")
-        if (savedIdeas) setIdeas(JSON.parse(savedIdeas))
-
-        const savedPhotoSessions = localStorage.getItem("globalBandPhotoSessions")
-        if (savedPhotoSessions) setPhotoSessions(JSON.parse(savedPhotoSessions))
-      } catch (error) {
-        console.error("Error loading global data:", error)
-      }
-    }
-
-    loadGlobalData()
-
-    // Actualizar datos cada 5 segundos para simular sincronización en tiempo real
-    const interval = setInterval(loadGlobalData, 5000)
-    return () => clearInterval(interval)
+    // Cargar estadísticas
+    loadStats()
   }, [])
 
-  // Calcular estadísticas reales
-  const getStats = () => {
-    const today = new Date().toISOString().split("T")[0]
-    const thisWeek = new Date()
-    thisWeek.setDate(thisWeek.getDate() - 7)
+  const loadStats = () => {
+    const songsData = localStorage.getItem("bandSongs")
+    const eventsData = localStorage.getItem("bandEvents")
+    const tasksData = localStorage.getItem("bandTasks")
+    const photosData = localStorage.getItem("bandPhotos")
+    const ideasData = localStorage.getItem("bandIdeas")
+    const venuesData = localStorage.getItem("bandVenues")
 
-    const readySongs = songs.filter((song) => song.status === "ready")
-    const practicingSongs = songs.filter((song) => song.status === "practicing")
-    const developingSongs = songs.filter((song) => song.status === "developing")
-
-    const upcomingEvents = events.filter((event) => new Date(event.date) >= new Date())
-    const todayEvents = events.filter((event) => event.date === today)
-
-    const completedTasks = tasks.filter((task) => task.status === "done")
-    const pendingTasks = tasks.filter((task) => task.status !== "done")
-
-    const totalPhotos = photoSessions.reduce((sum, session) => sum + session.photos.length, 0)
-
-    const recentActivity = [
-      ...songs
-        .filter((song) => new Date(song.lastUpdated) >= thisWeek)
-        .map((song) => ({
-          type: "song",
-          title: `Canción "${song.title}" actualizada`,
-          time: song.lastUpdated,
-          status: song.status,
-        })),
-      ...tasks
-        .filter((task) => task.status === "done" && new Date(task.createdAt) >= thisWeek)
-        .map((task) => ({
-          type: "task",
-          title: `Tarea "${task.title}" completada`,
-          time: task.createdAt,
-          status: "completed",
-        })),
-      ...ideas
-        .filter((idea) => new Date(idea.createdAt) >= thisWeek)
-        .map((idea) => ({
-          type: "idea",
-          title: `Nueva idea: "${idea.title}"`,
-          time: idea.createdAt,
-          author: idea.author,
-        })),
-      ...photoSessions
-        .filter((session) => new Date(session.date) >= thisWeek)
-        .map((session) => ({
-          type: "photos",
-          title: `Sesión de fotos: "${session.title}"`,
-          time: session.date,
-          count: session.photos.length,
-        })),
-      ...messages
-        .filter((msg) => new Date(msg.timestamp) >= thisWeek)
-        .slice(-5)
-        .map((msg) => ({
-          type: "message",
-          title: `${msg.author}: ${msg.content.substring(0, 50)}...`,
-          time: msg.timestamp,
-          channel: msg.channel,
-        })),
-    ]
-      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-      .slice(0, 8)
-
-    return {
-      songs: {
-        total: songs.length,
-        ready: readySongs.length,
-        practicing: practicingSongs.length,
-        developing: developingSongs.length,
-        readyPercentage: songs.length > 0 ? Math.round((readySongs.length / songs.length) * 100) : 0,
-        practicingPercentage: songs.length > 0 ? Math.round((practicingSongs.length / songs.length) * 100) : 0,
-        developingPercentage: songs.length > 0 ? Math.round((developingSongs.length / songs.length) * 100) : 0,
-      },
-      events: {
-        total: events.length,
-        upcoming: upcomingEvents.length,
-        today: todayEvents.length,
-        thisWeek: upcomingEvents.filter((event) => {
-          const eventDate = new Date(event.date)
-          const weekFromNow = new Date()
-          weekFromNow.setDate(weekFromNow.getDate() + 7)
-          return eventDate <= weekFromNow
-        }).length,
-      },
-      tasks: {
-        total: tasks.length,
-        completed: completedTasks.length,
-        pending: pendingTasks.length,
-        completionRate: tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0,
-      },
-      communication: {
-        totalMessages: messages.length,
-        todayMessages: messages.filter((msg) => {
-          const msgDate = new Date(msg.timestamp).toDateString()
-          const today = new Date().toDateString()
-          return msgDate === today
-        }).length,
-        activeChannels: [...new Set(messages.map((msg) => msg.channel))].length,
-      },
-      ideas: {
-        total: ideas.length,
-        thisWeek: ideas.filter((idea) => new Date(idea.createdAt) >= thisWeek).length,
-        totalLikes: ideas.reduce((sum, idea) => sum + idea.likes, 0),
-      },
-      photos: {
-        totalSessions: photoSessions.length,
-        totalPhotos: totalPhotos,
-        thisMonth: photoSessions.filter((session) => {
-          const sessionMonth = session.date.slice(0, 7)
-          const currentMonth = new Date().toISOString().slice(0, 7)
-          return sessionMonth === currentMonth
-        }).length,
-      },
-      recentActivity,
-    }
+    setStats({
+      songs: songsData ? JSON.parse(songsData).length : 0,
+      events: eventsData ? JSON.parse(eventsData).length : 0,
+      tasks: tasksData ? JSON.parse(tasksData).length : 0,
+      photos: photosData ? JSON.parse(photosData).length : 0,
+      ideas: ideasData ? JSON.parse(ideasData).length : 0,
+      venues: venuesData ? JSON.parse(venuesData).length : 0,
+      gisPoints:
+        (venuesData ? JSON.parse(venuesData).length : 0) +
+        (eventsData ? JSON.parse(eventsData).filter((e: any) => e.geoLocation).length : 0),
+    })
   }
 
-  const stats = getStats()
+  const menuItems = [
+    {
+      title: "Canciones",
+      description: "Gestiona repertorio y grabaciones",
+      href: "/canciones",
+      icon: Music2,
+      color: "bg-gradient-to-br from-blue-500 to-blue-600",
+      stats: `${stats.songs} canciones`,
+    },
+    {
+      title: "Calendario",
+      description: "Ensayos, shows y eventos",
+      href: "/calendario",
+      icon: Calendar,
+      color: "bg-gradient-to-br from-green-500 to-green-600",
+      stats: `${stats.events} eventos`,
+    },
+    {
+      title: "Tareas",
+      description: "Organiza el trabajo de la banda",
+      href: "/tareas",
+      icon: CheckSquare,
+      color: "bg-gradient-to-br from-orange-500 to-orange-600",
+      stats: `${stats.tasks} tareas`,
+    },
+    {
+      title: "Fotos",
+      description: "Galería compartida en Drive",
+      href: "/fotos",
+      icon: Camera,
+      color: "bg-gradient-to-br from-purple-500 to-purple-600",
+      stats: `${stats.photos} fotos`,
+    },
+    {
+      title: "Ideas",
+      description: "Captura inspiración musical",
+      href: "/ideas",
+      icon: Lightbulb,
+      color: "bg-gradient-to-br from-yellow-500 to-yellow-600",
+      stats: `${stats.ideas} ideas`,
+    },
+    {
+      title: "Chat",
+      description: "Comunicación de la banda",
+      href: "/chat",
+      icon: MessageCircle,
+      color: "bg-gradient-to-br from-indigo-500 to-indigo-600",
+      stats: "Mensajes en tiempo real",
+    },
+    {
+      title: "Sistema GIS",
+      description: "Mapas y geolocalización",
+      href: "/gis",
+      icon: MapPin,
+      color: "bg-gradient-to-br from-emerald-500 to-emerald-600",
+      stats: `${stats.venues} venues, ${stats.gisPoints} puntos`,
+      isNew: true,
+    },
+  ]
 
-  const getTimeAgo = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+  const quickActions = [
+    { title: "Nueva Canción", href: "/canciones", icon: Music2, color: "text-blue-600" },
+    { title: "Programar Ensayo", href: "/calendario", icon: Calendar, color: "text-green-600" },
+    { title: "Subir Fotos", href: "/fotos", icon: Camera, color: "text-purple-600" },
+    { title: "Ver Mapa", href: "/gis", icon: Navigation, color: "text-emerald-600" },
+  ]
 
-    if (diffInHours < 1) return "Hace menos de 1 hora"
-    if (diffInHours < 24) return `Hace ${diffInHours} hora${diffInHours !== 1 ? "s" : ""}`
-
-    const diffInDays = Math.floor(diffInHours / 24)
-    if (diffInDays < 7) return `Hace ${diffInDays} día${diffInDays !== 1 ? "s" : ""}`
-
-    const diffInWeeks = Math.floor(diffInDays / 7)
-    return `Hace ${diffInWeeks} semana${diffInWeeks !== 1 ? "s" : ""}`
-  }
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case "song":
-        return <Music className="h-4 w-4 text-blue-500" />
-      case "task":
-        return <CheckSquare className="h-4 w-4 text-green-500" />
-      case "idea":
-        return <Lightbulb className="h-4 w-4 text-yellow-500" />
-      case "photos":
-        return <Camera className="h-4 w-4 text-purple-500" />
-      case "message":
-        return <MessageCircle className="h-4 w-4 text-indigo-500" />
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />
-    }
-  }
+  const recentActivity = [
+    { action: "Nueva canción agregada", item: "Sueños de Libertad", time: "hace 2 horas", type: "song" },
+    { action: "Ensayo programado", item: "Studio Central", time: "hace 4 horas", type: "event" },
+    { action: "Fotos subidas", item: "Sesión en vivo", time: "hace 1 día", type: "photo" },
+    { action: "Venue agregado", item: "Club de Jazz Downtown", time: "hace 2 días", type: "venue" },
+  ]
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
-        {/* Header */}
-        <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-50">
-          <div className="container mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Image src="/logo.png" alt="Panta Rei Project" width={50} height={50} className="drop-shadow-lg" />
-                <div>
-                  <h1 className="text-2xl font-bold text-slate-800">Panta Rei Project</h1>
-                  <p className="text-slate-600 text-sm">Dashboard de la Banda</p>
+      <DriveConnectionGuard>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
+          {/* Header */}
+          <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40">
+            <div className="container mx-auto px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Image src="/logo.png" alt="Panta Rei Project" width={50} height={50} className="drop-shadow-lg" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Panta Rei Project</h1>
+                    <p className="text-sm text-slate-600">Dashboard Musical con GIS</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="hidden md:flex items-center gap-2 text-slate-600">
-                  <Users className="h-4 w-4" />
-                  <span className="text-sm">3 miembros activos</span>
+                <div className="flex items-center gap-4">
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                    <Globe className="h-3 w-3 mr-1" />
+                    GIS Activo
+                  </Badge>
+                  <UserMenu />
+                  <MobileNav />
                 </div>
-                <UserMenu />
-                <MobileNav />
               </div>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <div className="container mx-auto p-6">
-          {/* Welcome Section */}
-          <div className="mb-12">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center shadow-lg">
-                <Music className="h-8 w-8 text-white" />
+          <div className="container mx-auto p-6">
+            {/* Welcome Section */}
+            <div className="mb-12">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
+                <h2 className="text-3xl font-bold text-slate-800">¡Hola, {currentUser?.name || "Músico"}! 👋</h2>
+                <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
               </div>
-              <div>
-                <h2 className="text-3xl font-bold text-slate-800 mb-2">¡Hola, {currentUser?.name || "Músico"}! 👋</h2>
-                <p className="text-slate-600">
-                  Bienvenido al centro de control de Panta Rei Project. Aquí tienes un resumen de toda la actividad.
-                </p>
+              <p className="text-slate-600 text-lg mb-6">
+                Gestiona tu banda con herramientas integradas y capacidades de mapeo geoespacial
+              </p>
+
+              {/* Quick Stats con GIS */}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <Music2 className="h-6 w-6 text-blue-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.songs}</p>
+                    <p className="text-xs text-slate-600">Canciones</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <Calendar className="h-6 w-6 text-green-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.events}</p>
+                    <p className="text-xs text-slate-600">Eventos</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <CheckSquare className="h-6 w-6 text-orange-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.tasks}</p>
+                    <p className="text-xs text-slate-600">Tareas</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <Camera className="h-6 w-6 text-purple-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.photos}</p>
+                    <p className="text-xs text-slate-600">Fotos</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <Lightbulb className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.ideas}</p>
+                    <p className="text-xs text-slate-600">Ideas</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <MapPin className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.venues}</p>
+                    <p className="text-xs text-slate-600">Venues</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardContent className="p-4 text-center">
+                    <Globe className="h-6 w-6 text-cyan-500 mx-auto mb-2" />
+                    <p className="text-2xl font-bold text-slate-800">{stats.gisPoints}</p>
+                    <p className="text-xs text-slate-600">Puntos GIS</p>
+                  </CardContent>
+                </Card>
               </div>
             </div>
-            <div className="w-24 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
-          </div>
 
-          {/* Main Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {/* Repertorio */}
-            <Link href="/canciones">
-              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700">Repertorio</CardTitle>
-                  <Music className="h-4 w-4 text-blue-500 group-hover:scale-110 transition-transform" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-800 mb-1">{stats.songs.total}</div>
-                  <p className="text-xs text-slate-600">
-                    {stats.songs.ready} listas • {stats.songs.practicing} ensayando
-                  </p>
-                  <div className="flex gap-1 mt-2">
-                    <div className="flex-1 bg-slate-200 rounded-full h-1">
-                      <div
-                        className="bg-green-500 h-1 rounded-full transition-all duration-500"
-                        style={{ width: `${stats.songs.readyPercentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-
-            {/* Calendario */}
-            <Link href="/calendario">
-              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700">Próximos Eventos</CardTitle>
-                  <Calendar className="h-4 w-4 text-green-500 group-hover:scale-110 transition-transform" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-800 mb-1">{stats.events.upcoming}</div>
-                  <p className="text-xs text-slate-600">
-                    {stats.events.today > 0 ? `${stats.events.today} hoy` : "Ninguno hoy"} • {stats.events.thisWeek}{" "}
-                    esta semana
-                  </p>
-                  {stats.events.today > 0 && (
-                    <Badge className="mt-2 bg-green-500 text-white text-xs">¡Evento hoy!</Badge>
-                  )}
-                </CardContent>
-              </Card>
-            </Link>
-
-            {/* Tareas */}
-            <Link href="/tareas">
-              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700">Tareas</CardTitle>
-                  <CheckSquare className="h-4 w-4 text-purple-500 group-hover:scale-110 transition-transform" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-800 mb-1">{stats.tasks.pending}</div>
-                  <p className="text-xs text-slate-600">
-                    {stats.tasks.completed} completadas • {stats.tasks.completionRate}% progreso
-                  </p>
-                  <div className="flex gap-1 mt-2">
-                    <div className="flex-1 bg-slate-200 rounded-full h-1">
-                      <div
-                        className="bg-purple-500 h-1 rounded-full transition-all duration-500"
-                        style={{ width: `${stats.tasks.completionRate}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-
-            {/* Comunicación */}
-            <Link href="/chat">
-              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700">Comunicación</CardTitle>
-                  <MessageCircle className="h-4 w-4 text-indigo-500 group-hover:scale-110 transition-transform" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-800 mb-1">{stats.communication.totalMessages}</div>
-                  <p className="text-xs text-slate-600">
-                    {stats.communication.todayMessages} hoy • {stats.communication.activeChannels} canales
-                  </p>
-                  {stats.communication.todayMessages > 0 && (
-                    <Badge className="mt-2 bg-indigo-500 text-white text-xs">Actividad hoy</Badge>
-                  )}
-                </CardContent>
-              </Card>
-            </Link>
-          </div>
-
-          {/* Secondary Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            {/* Ideas */}
-            <Link href="/ideas">
-              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700">Banco de Ideas</CardTitle>
-                  <Lightbulb className="h-4 w-4 text-yellow-500 group-hover:scale-110 transition-transform" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-800 mb-1">{stats.ideas.total}</div>
-                  <p className="text-xs text-slate-600">
-                    {stats.ideas.thisWeek} esta semana • {stats.ideas.totalLikes} likes totales
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
-
-            {/* Fotos */}
-            <Link href="/fotos">
-              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer group">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700">Galería</CardTitle>
-                  <Camera className="h-4 w-4 text-pink-500 group-hover:scale-110 transition-transform" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-slate-800 mb-1">{stats.photos.totalPhotos}</div>
-                  <p className="text-xs text-slate-600">
-                    {stats.photos.totalSessions} sesiones • {stats.photos.thisMonth} este mes
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
-
-            {/* Progreso General */}
-            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-700">Progreso General</CardTitle>
-                <TrendingUp className="h-4 w-4 text-emerald-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-slate-800 mb-1">
-                  {Math.round((stats.songs.readyPercentage + stats.tasks.completionRate) / 2)}%
-                </div>
-                <p className="text-xs text-slate-600">Promedio de completitud</p>
-                <div className="flex gap-1 mt-2">
-                  <div className="flex-1 bg-slate-200 rounded-full h-1">
-                    <div
-                      className="bg-emerald-500 h-1 rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.round((stats.songs.readyPercentage + stats.tasks.completionRate) / 2)}%`,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Recent Activity */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-              <CardHeader>
-                <CardTitle className="text-slate-800 flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-slate-600" />
-                  Actividad Reciente
-                </CardTitle>
-                <CardDescription className="text-slate-600">Últimas actualizaciones de toda la banda</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {stats.recentActivity.length > 0 ? (
-                    stats.recentActivity.map((activity, index) => (
-                      <div key={index} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
-                        {getActivityIcon(activity.type)}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{activity.title}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <p className="text-xs text-slate-500">{getTimeAgo(activity.time)}</p>
-                            {activity.author && (
-                              <Badge variant="outline" className="text-xs">
-                                {activity.author}
-                              </Badge>
-                            )}
-                            {activity.status && (
-                              <Badge
-                                className={`text-xs ${
-                                  activity.status === "ready"
-                                    ? "bg-green-100 text-green-800"
-                                    : activity.status === "practicing"
-                                      ? "bg-yellow-100 text-yellow-800"
-                                      : activity.status === "completed"
-                                        ? "bg-blue-100 text-blue-800"
-                                        : "bg-gray-100 text-gray-800"
-                                }`}
-                              >
-                                {activity.status === "ready"
-                                  ? "Lista"
-                                  : activity.status === "practicing"
-                                    ? "Ensayando"
-                                    : activity.status === "completed"
-                                      ? "Completada"
-                                      : activity.status}
-                              </Badge>
-                            )}
-                          </div>
+            {/* Main Menu con GIS destacado */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+              {menuItems.map((item, index) => {
+                const IconComponent = item.icon
+                return (
+                  <Link key={index} href={item.href}>
+                    <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 bg-white/90 backdrop-blur-sm border-slate-200 relative overflow-hidden">
+                      {item.isNew && (
+                        <div className="absolute top-3 right-3">
+                          <Badge className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white border-0 shadow-lg">
+                            <Zap className="h-3 w-3 mr-1" />
+                            Nuevo
+                          </Badge>
                         </div>
+                      )}
+                      <CardHeader className="pb-4">
+                        <div
+                          className={`w-12 h-12 ${item.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}
+                        >
+                          <IconComponent className="h-6 w-6 text-white" />
+                        </div>
+                        <CardTitle className="text-slate-800 group-hover:text-slate-900 transition-colors">
+                          {item.title}
+                        </CardTitle>
+                        <CardDescription className="text-slate-600 group-hover:text-slate-700 transition-colors">
+                          {item.description}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex items-center justify-between">
+                          <Badge variant="outline" className="text-slate-600 border-slate-300">
+                            {item.stats}
+                          </Badge>
+                          <div className="text-slate-400 group-hover:text-slate-600 transition-colors">→</div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                )
+              })}
+            </div>
+
+            {/* Layout de dos columnas */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Columna principal */}
+              <div className="lg:col-span-2 space-y-8">
+                {/* Acciones Rápidas */}
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardHeader>
+                    <CardTitle className="text-slate-800 flex items-center gap-2">
+                      <Zap className="h-5 w-5 text-amber-500" />
+                      Acciones Rápidas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {quickActions.map((action, index) => {
+                        const ActionIcon = action.icon
+                        return (
+                          <Link key={index} href={action.href}>
+                            <Button
+                              variant="outline"
+                              className="h-auto flex-col gap-2 p-4 hover:shadow-lg transition-all duration-200 bg-white/50 hover:bg-white/80 border-slate-200"
+                            >
+                              <ActionIcon className={`h-5 w-5 ${action.color}`} />
+                              <span className="text-xs text-slate-700">{action.title}</span>
+                            </Button>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Sistema GIS - Destacado */}
+                <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200 shadow-lg">
+                  <CardHeader>
+                    <CardTitle className="text-emerald-800 flex items-center gap-2">
+                      <Globe className="h-5 w-5" />
+                      Sistema GIS Activado
+                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300">Nuevo</Badge>
+                    </CardTitle>
+                    <CardDescription className="text-emerald-700">
+                      Ahora puedes gestionar venues, eventos y fotos con geolocalización
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                      <div className="text-center p-3 bg-white/60 rounded-lg">
+                        <MapPin className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-emerald-800">Mapas Interactivos</p>
+                        <p className="text-xs text-emerald-600">Visualiza ubicaciones</p>
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8">
-                      <Clock className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                      <p className="text-slate-500">No hay actividad reciente</p>
-                      <p className="text-xs text-slate-400 mt-1">¡Empieza creando contenido!</p>
+                      <div className="text-center p-3 bg-white/60 rounded-lg">
+                        <Navigation className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-emerald-800">Geolocalización</p>
+                        <p className="text-xs text-emerald-600">GPS integrado</p>
+                      </div>
+                      <div className="text-center p-3 bg-white/60 rounded-lg">
+                        <TrendingUp className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-emerald-800">Análisis Espacial</p>
+                        <p className="text-xs text-emerald-600">Métricas y rutas</p>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-              <CardHeader>
-                <CardTitle className="text-slate-800 flex items-center gap-2">
-                  <Star className="h-5 w-5 text-slate-600" />
-                  Acciones Rápidas
-                </CardTitle>
-                <CardDescription className="text-slate-600">Accesos directos a funciones principales</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-3">
-                  <Link href="/canciones">
-                    <Button className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white">
-                      <Music className="h-4 w-4 mr-2" />
-                      Nueva Canción
-                    </Button>
-                  </Link>
-                  <Link href="/calendario">
-                    <Button className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Nuevo Evento
-                    </Button>
-                  </Link>
-                  <Link href="/ideas">
-                    <Button className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white">
-                      <Lightbulb className="h-4 w-4 mr-2" />
-                      Nueva Idea
-                    </Button>
-                  </Link>
-                  <Link href="/fotos">
-                    <Button className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white">
-                      <Camera className="h-4 w-4 mr-2" />
-                      Subir Fotos
-                    </Button>
-                  </Link>
-                  <Link href="/tareas">
-                    <Button className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white">
-                      <CheckSquare className="h-4 w-4 mr-2" />
-                      Nueva Tarea
-                    </Button>
-                  </Link>
-                  <Link href="/chat">
-                    <Button className="w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white">
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Ir al Chat
-                    </Button>
-                  </Link>
-                </div>
-
-                {/* Próximos eventos destacados */}
-                {stats.events.today > 0 && (
-                  <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calendar className="h-4 w-4 text-green-600" />
-                      <span className="font-medium text-green-800">¡Eventos de hoy!</span>
-                    </div>
-                    <p className="text-sm text-green-700">
-                      Tienes {stats.events.today} evento{stats.events.today !== 1 ? "s" : ""} programado
-                      {stats.events.today !== 1 ? "s" : ""} para hoy.
-                    </p>
-                    <Link href="/calendario">
-                      <Button size="sm" className="mt-2 bg-green-600 hover:bg-green-700 text-white">
-                        Ver Calendario
+                    <Link href="/gis">
+                      <Button className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg">
+                        <Globe className="h-4 w-4 mr-2" />
+                        Explorar Sistema GIS
                       </Button>
                     </Link>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sidebar */}
+              <div className="space-y-6">
+                {/* Actividad Reciente */}
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardHeader>
+                    <CardTitle className="text-slate-800 flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-blue-500" />
+                      Actividad Reciente
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {recentActivity.map((activity, index) => (
+                        <div key={index} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                          <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 flex-shrink-0"></div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800">{activity.action}</p>
+                            <p className="text-xs text-slate-600 truncate">{activity.item}</p>
+                            <p className="text-xs text-slate-500">{activity.time}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Estado de la Banda */}
+                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                  <CardHeader>
+                    <CardTitle className="text-slate-800 flex items-center gap-2">
+                      <Users className="h-5 w-5 text-green-500" />
+                      Estado de la Banda
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Miembros activos</span>
+                        <Badge className="bg-green-100 text-green-800">3/3</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Próximo ensayo</span>
+                        <Badge className="bg-blue-100 text-blue-800">Hoy 19:00</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Canciones listas</span>
+                        <Badge className="bg-purple-100 text-purple-800">{stats.songs}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">Venues mapeados</span>
+                        <Badge className="bg-emerald-100 text-emerald-800">{stats.venues}</Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Tips GIS */}
+                <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-lg">
+                  <CardHeader>
+                    <CardTitle className="text-amber-800 flex items-center gap-2">
+                      <Lightbulb className="h-5 w-5" />
+                      Tips GIS
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="p-3 bg-white/60 rounded-lg">
+                        <p className="text-sm font-medium text-amber-800 mb-1">📍 Agrega Venues</p>
+                        <p className="text-xs text-amber-700">Registra estudios y salas para optimizar rutas</p>
+                      </div>
+                      <div className="p-3 bg-white/60 rounded-lg">
+                        <p className="text-sm font-medium text-amber-800 mb-1">🗺️ Geolocaliza Eventos</p>
+                        <p className="text-xs text-amber-700">Añade coordenadas GPS a tus shows</p>
+                      </div>
+                      <div className="p-3 bg-white/60 rounded-lg">
+                        <p className="text-sm font-medium text-amber-800 mb-1">📊 Análisis Espacial</p>
+                        <p className="text-xs text-amber-700">Descubre patrones en tu actividad musical</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </DriveConnectionGuard>
     </AuthGuard>
   )
 }

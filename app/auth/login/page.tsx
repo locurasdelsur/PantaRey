@@ -260,14 +260,17 @@ export default function LoginPage() {
             </div>
 
             {/* Información sobre Google Drive */}
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-2 mb-1">
-                <Cloud className="h-4 w-4 text-blue-600" />
-                <span className="text-xs font-medium text-blue-800">Almacenamiento en Google Drive</span>
-              </div>
-              <p className="text-xs text-blue-700">
-                Todos los datos se guardan automáticamente en Google Drive y son accesibles para todos los miembros de
-                la banda.
+            <div className="mt-4 p-3 bg-slate-100 border border-slate-200 rounded-md text-xs text-slate-600">
+              <p>
+                <span className="font-semibold">Almacenamiento:</span> Los datos de esta aplicación se guardan de forma
+                segura en Google Drive.
+              </p>
+              <p className="mt-2">
+                <span className="font-semibold">Privacidad:</span> Solo tú tienes acceso a tus datos. Consulta nuestra{" "}
+                <Link href="/privacy" className="text-amber-600 hover:text-amber-700 font-medium">
+                  Política de Privacidad
+                </Link>{" "}
+                para más detalles.
               </p>
             </div>
           </CardContent>
