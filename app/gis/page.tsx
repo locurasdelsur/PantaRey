@@ -4,131 +4,106 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { InteractiveMap } from "@/components/interactive-map"
-import { VenueManager } from "@/components/venue-manager"
-import type { GeoLocation, MapMarker, Venue, GeoEvent } from "@/lib/gis-types"
-import { GISUtils } from "@/lib/gis-utils"
-import { Map, MapPin, Navigation, BarChart3, Calendar, TrendingUp, Globe, Zap } from "lucide-react"
+import { ArrowLeft, MapPin, Navigation, Calculator, Zap, Map, Building, Route, BarChart3 } from "lucide-react"
+import InteractiveMap from "@/components/interactive-map"
+import VenueManager from "@/components/venue-manager"
+import type { Venue, Coordinates } from "@/lib/gis-types"
+import { calculateDistance, formatDistance, getCenterPoint } from "@/lib/gis-utils"
+import { driveStorage } from "@/lib/google-drive-storage"
 
 export default function GISPage() {
   const [venues, setVenues] = useState<Venue[]>([])
-  const [events, setEvents] = useState<GeoEvent[]>([])
-  const [photos, setPhotos] = useState<any[]>([])
-  const [userLocation, setUserLocation] = useState<GeoLocation | null>(null)
-  const [mapMarkers, setMapMarkers] = useState<MapMarker[]>([])
-  const [selectedTab, setSelectedTab] = useState("overview")
+  const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null)
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null)
+  const [mapCenter, setMapCenter] = useState<Coordinates>({ lat: 40.4168, lng: -3.7038 })
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    loadGISData()
-    getCurrentLocation()
+    loadVenues()
+    getUserLocation()
   }, [])
 
-  const loadGISData = () => {
-    // Cargar venues
-    const savedVenues = localStorage.getItem("bandVenues")
-    if (savedVenues) {
-      try {
-        setVenues(JSON.parse(savedVenues))
-      } catch (error) {
-        console.error("Error loading venues:", error)
-      }
-    }
-
-    // Cargar eventos
-    const savedEvents = localStorage.getItem("bandEvents")
-    if (savedEvents) {
-      try {
-        const parsedEvents = JSON.parse(savedEvents)
-        setEvents(parsedEvents)
-      } catch (error) {
-        console.error("Error loading events:", error)
-      }
-    }
-
-    // Cargar fotos (simuladas con geolocalización)
-    const savedPhotos = localStorage.getItem("bandPhotos")
-    if (savedPhotos) {
-      try {
-        setPhotos(JSON.parse(savedPhotos))
-      } catch (error) {
-        console.error("Error loading photos:", error)
-      }
-    }
-  }
-
-  const getCurrentLocation = async () => {
+  const loadVenues = async () => {
     try {
-      const location = await GISUtils.getCurrentLocation()
-      setUserLocation(location)
-    } catch (error) {
-      console.error("Error getting current location:", error)
-    }
-  }
+      setIsLoading(true)
+      const data = await driveStorage.loadData("venues.json")
+      if (data && Array.isArray(data)) {
+        setVenues(data)
 
-  // Generar marcadores para el mapa
-  useEffect(() => {
-    const markers: MapMarker[] = []
-
-    // Agregar venues
-    venues.forEach((venue) => {
-      markers.push({
-        id: `venue-${venue.id}`,
-        position: venue.geoLocation,
-        type: "venue",
-        title: venue.name,
-        description: `${venue.type} - ${venue.address}`,
-      })
-    })
-
-    // Agregar eventos (simulados con geolocalización)
-    events.forEach((event) => {
-      if (event.geoLocation) {
-        markers.push({
-          id: `event-${event.id}`,
-          position: event.geoLocation,
-          type: "event",
-          title: event.title,
-          description: `${event.date} - ${event.location}`,
-        })
+        // Set map center to venues center if available
+        if (data.length > 0) {
+          const center = getCenterPoint(data.map((v) => v.coordinates))
+          setMapCenter(center)
+        }
       }
-    })
-
-    setMapMarkers(markers)
-  }, [venues, events])
-
-  const getGISStats = () => {
-    const totalVenues = venues.length
-    const venuesByType = venues.reduce(
-      (acc, venue) => {
-        acc[venue.type] = (acc[venue.type] || 0) + 1
-        return acc
-      },
-      {} as Record<string, number>,
-    )
-
-    const upcomingEvents = events.filter((event) => new Date(event.date) >= new Date()).length
-    const eventsWithLocation = events.filter((event) => event.geoLocation).length
-
-    let averageDistance = 0
-    if (userLocation && venues.length > 0) {
-      const distances = venues.map((venue) => GISUtils.calculateDistance(userLocation, venue.geoLocation))
-      averageDistance = distances.reduce((a, b) => a + b, 0) / distances.length
-    }
-
-    return {
-      totalVenues,
-      venuesByType,
-      upcomingEvents,
-      eventsWithLocation,
-      averageDistance: Math.round(averageDistance * 10) / 10,
-      coverage: venues.length > 0 ? Math.round((eventsWithLocation / Math.max(events.length, 1)) * 100) : 0,
+    } catch (error) {
+      console.error("Error loading venues:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const stats = getGISStats()
+  const getUserLocation = async () => {
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000,
+        })
+      })
+
+      const coords = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      }
+
+      setUserLocation(coords)
+      setMapCenter(coords)
+    } catch (error) {
+      console.error("Error getting location:", error)
+    }
+  }
+
+  const handleVenueSelect = (venue: Venue) => {
+    setSelectedVenue(venue)
+    setMapCenter(venue.coordinates)
+  }
+
+  const getVenueStats = () => {
+    const stats = {
+      total: venues.length,
+      studios: venues.filter((v) => v.type === "studio").length,
+      venues: venues.filter((v) => v.type === "venue").length,
+      rehearsal: venues.filter((v) => v.type === "rehearsal").length,
+      totalCapacity: venues.reduce((sum, v) => sum + (v.capacity || 0), 0),
+      averageDistance: 0,
+    }
+
+    if (userLocation && venues.length > 0) {
+      const distances = venues.map((v) => calculateDistance(userLocation, v.coordinates))
+      stats.averageDistance = distances.reduce((sum, d) => sum + d, 0) / distances.length
+    }
+
+    return stats
+  }
+
+  const getNearestVenues = (limit = 5) => {
+    if (!userLocation) return []
+
+    return venues
+      .map((venue) => ({
+        ...venue,
+        distance: calculateDistance(userLocation, venue.coordinates),
+      }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limit)
+  }
+
+  const stats = getVenueStats()
+  const nearestVenues = getNearestVenues()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
@@ -140,84 +115,95 @@ export default function GISPage() {
               href="/"
               className="text-slate-600 hover:text-slate-800 mb-4 inline-flex items-center gap-2 font-medium"
             >
-              ← Volver al Dashboard
+              <ArrowLeft className="h-4 w-4" />
+              Volver al Dashboard
             </Link>
             <div className="flex items-center gap-4 mb-4">
               <Image src="/logo.png" alt="Panta Rei Project" width={60} height={60} className="drop-shadow-lg" />
               <div>
-                <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">Sistema GIS Musical</h1>
+                <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">Sistema GIS</h1>
                 <p className="text-slate-600">Gestión geoespacial de venues, eventos y ubicaciones</p>
               </div>
             </div>
-            <div className="w-16 h-1 bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full"></div>
+            <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
           </div>
         </div>
 
-        {/* Stats Dashboard */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <MapPin className="h-6 w-6 text-emerald-500" />
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Building className="h-6 w-6 text-blue-600" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Total Venues</p>
-                  <p className="text-2xl font-bold text-slate-800">{stats.totalVenues}</p>
+                  <p className="text-sm font-medium text-slate-600">Total Venues</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <Calendar className="h-6 w-6 text-blue-500" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Calculator className="h-6 w-6 text-green-600" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Eventos Próximos</p>
-                  <p className="text-2xl font-bold text-slate-800">{stats.upcomingEvents}</p>
+                  <p className="text-sm font-medium text-slate-600">Capacidad Total</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalCapacity}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <Navigation className="h-6 w-6 text-purple-500" />
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Navigation className="h-6 w-6 text-purple-600" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Distancia Promedio</p>
-                  <p className="text-2xl font-bold text-slate-800">{stats.averageDistance}km</p>
+                  <p className="text-sm font-medium text-slate-600">Distancia Promedio</p>
+                  <p className="text-2xl font-bold text-slate-800">
+                    {userLocation ? formatDistance(stats.averageDistance) : "--"}
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <Globe className="h-6 w-6 text-orange-500" />
+                <div className="p-2 bg-amber-100 rounded-lg">
+                  <Zap className="h-6 w-6 text-amber-600" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Cobertura GIS</p>
-                  <p className="text-2xl font-bold text-slate-800">{stats.coverage}%</p>
+                  <p className="text-sm font-medium text-slate-600">Estado GIS</p>
+                  <p className="text-lg font-bold text-green-600">Activo</p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Tabs de contenido */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-6">
-          <TabsList className="grid grid-cols-4 w-full max-w-2xl mx-auto">
-            <TabsTrigger value="overview" className="flex items-center gap-2">
+        {/* Main Content */}
+        <Tabs defaultValue="map" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="map" className="flex items-center gap-2">
               <Map className="h-4 w-4" />
-              Resumen
+              Mapa
             </TabsTrigger>
             <TabsTrigger value="venues" className="flex items-center gap-2">
-              <MapPin className="h-4 w-4" />
+              <Building className="h-4 w-4" />
               Venues
             </TabsTrigger>
-            <TabsTrigger value="events" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Eventos
+            <TabsTrigger value="routes" className="flex items-center gap-2">
+              <Route className="h-4 w-4" />
+              Rutas
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -225,206 +211,188 @@ export default function GISPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Tab: Resumen */}
-          <TabsContent value="overview" className="space-y-6">
-            <Card>
+          <TabsContent value="map" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <InteractiveMap
+                  venues={venues}
+                  center={mapCenter}
+                  zoom={12}
+                  height="500px"
+                  onVenueSelect={handleVenueSelect}
+                  selectedVenueId={selectedVenue?.id}
+                />
+              </div>
+              <div className="space-y-4">
+                {selectedVenue && (
+                  <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <MapPin className="h-5 w-5" />
+                        Venue Seleccionado
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div>
+                          <h3 className="font-semibold text-slate-800">{selectedVenue.name}</h3>
+                          <p className="text-sm text-slate-600">{selectedVenue.address}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            className={
+                              selectedVenue.type === "studio"
+                                ? "bg-red-100 text-red-800"
+                                : selectedVenue.type === "venue"
+                                  ? "bg-purple-100 text-purple-800"
+                                  : selectedVenue.type === "rehearsal"
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-gray-100 text-gray-800"
+                            }
+                          >
+                            {selectedVenue.type === "studio"
+                              ? "Estudio"
+                              : selectedVenue.type === "venue"
+                                ? "Venue"
+                                : selectedVenue.type === "rehearsal"
+                                  ? "Ensayo"
+                                  : "Otro"}
+                          </Badge>
+                          {selectedVenue.capacity && <Badge variant="outline">{selectedVenue.capacity} personas</Badge>}
+                        </div>
+                        {userLocation && (
+                          <div className="text-sm text-slate-600">
+                            <strong>Distancia:</strong>{" "}
+                            {formatDistance(calculateDistance(userLocation, selectedVenue.coordinates))}
+                          </div>
+                        )}
+                        {selectedVenue.notes && (
+                          <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">{selectedVenue.notes}</p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {userLocation && nearestVenues.length > 0 && (
+                  <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Navigation className="h-5 w-5" />
+                        Venues Más Cercanos
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {nearestVenues.map((venue) => (
+                          <div
+                            key={venue.id}
+                            className="flex items-center justify-between p-2 rounded hover:bg-slate-50 cursor-pointer"
+                            onClick={() => handleVenueSelect(venue)}
+                          >
+                            <div>
+                              <p className="font-medium text-sm">{venue.name}</p>
+                              <p className="text-xs text-slate-600">{venue.type}</p>
+                            </div>
+                            <Badge variant="outline" className="text-xs">
+                              {formatDistance(venue.distance)}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="venues">
+            <VenueManager onVenueSelect={handleVenueSelect} />
+          </TabsContent>
+
+          <TabsContent value="routes" className="space-y-6">
+            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Map className="h-5 w-5 text-emerald-600" />
-                  Mapa General
+                  <Route className="h-5 w-5" />
+                  Planificación de Rutas
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <InteractiveMap markers={mapMarkers} height="500px" center={userLocation || undefined} />
+                <div className="text-center py-8">
+                  <Route className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">Próximamente</h3>
+                  <p className="text-slate-600">
+                    Funcionalidad de planificación de rutas y optimización de recorridos entre venues.
+                  </p>
+                </div>
               </CardContent>
             </Card>
+          </TabsContent>
 
-            {/* Distribución por tipo de venue */}
+          <TabsContent value="analytics" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
+              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
                 <CardHeader>
-                  <CardTitle>Distribución de Venues</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {Object.entries(stats.venuesByType).map(([type, count]) => (
-                      <div key={type} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                          <span className="capitalize text-sm">{type}</span>
-                        </div>
-                        <Badge variant="outline">{count}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cobertura Geográfica</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Distribución por Tipo
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Eventos con ubicación</span>
-                      <span className="font-medium">
-                        {stats.eventsWithLocation}/{events.length}
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                        <span className="text-sm">Estudios</span>
+                      </div>
+                      <span className="font-semibold">{stats.studios}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+                        <span className="text-sm">Venues</span>
+                      </div>
+                      <span className="font-semibold">{stats.venues}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span className="text-sm">Salas de Ensayo</span>
+                      </div>
+                      <span className="font-semibold">{stats.rehearsal}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5" />
+                    Métricas Espaciales
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Total de Venues</span>
+                      <span className="font-semibold">{stats.total}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Capacidad Total</span>
+                      <span className="font-semibold">{stats.totalCapacity}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Distancia Promedio</span>
+                      <span className="font-semibold">
+                        {userLocation ? formatDistance(stats.averageDistance) : "--"}
                       </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${stats.coverage}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      {stats.coverage}% de eventos tienen datos de geolocalización
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Tab: Venues */}
-          <TabsContent value="venues">
-            <VenueManager />
-          </TabsContent>
-
-          {/* Tab: Eventos */}
-          <TabsContent value="events" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-blue-600" />
-                  Eventos con Geolocalización
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {events
-                    .filter((event) => event.geoLocation)
-                    .map((event) => (
-                      <Card key={event.id} className="hover:shadow-lg transition-shadow">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-lg">{event.title}</CardTitle>
-                          <Badge className="bg-blue-500 text-white w-fit">{event.type}</Badge>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <p className="text-sm text-gray-600">
-                              <strong>Fecha:</strong> {event.date}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              <strong>Ubicación:</strong> {event.location}
-                            </p>
-                            {event.geoLocation && userLocation && (
-                              <p className="text-sm text-gray-600">
-                                <strong>Distancia:</strong>{" "}
-                                {Math.round(GISUtils.calculateDistance(userLocation, event.geoLocation) * 10) / 10}km
-                              </p>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                </div>
-
-                {events.filter((event) => event.geoLocation).length === 0 && (
-                  <div className="text-center py-12">
-                    <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No hay eventos con geolocalización</h3>
-                    <p className="text-gray-600">Los eventos necesitan coordenadas GPS para aparecer en el mapa</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Tab: Análisis */}
-          <TabsContent value="analytics" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-green-600" />
-                    Análisis Espacial
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-green-50 rounded-lg">
-                      <h4 className="font-medium text-green-800 mb-2">Venue más Cercano</h4>
-                      {userLocation && venues.length > 0 ? (
-                        (() => {
-                          const distances = venues.map((venue) => ({
-                            venue,
-                            distance: GISUtils.calculateDistance(userLocation, venue.geoLocation),
-                          }))
-                          const closest = distances.reduce((prev, current) =>
-                            current.distance < prev.distance ? current : prev,
-                          )
-                          return (
-                            <div>
-                              <p className="text-sm text-green-700">{closest.venue.name}</p>
-                              <p className="text-xs text-green-600">
-                                {Math.round(closest.distance * 10) / 10}km de distancia
-                              </p>
-                            </div>
-                          )
-                        })()
-                      ) : (
-                        <p className="text-sm text-green-700">Ubicación no disponible</p>
-                      )}
-                    </div>
-
-                    <div className="p-4 bg-blue-50 rounded-lg">
-                      <h4 className="font-medium text-blue-800 mb-2">Concentración de Venues</h4>
-                      <p className="text-sm text-blue-700">
-                        {venues.length > 0 ? `${venues.length} venues registrados` : "No hay datos suficientes"}
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-purple-50 rounded-lg">
-                      <h4 className="font-medium text-purple-800 mb-2">Rutas Optimizadas</h4>
-                      <p className="text-sm text-purple-700">Función disponible con más de 3 venues</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-orange-600" />
-                    Métricas de Rendimiento
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Datos GIS activos</span>
-                      <Badge className="bg-green-100 text-green-800">{mapMarkers.length} puntos</Badge>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Precisión GPS</span>
-                      <Badge className="bg-blue-100 text-blue-800">
-                        {userLocation?.accuracy ? `±${Math.round(userLocation.accuracy)}m` : "N/A"}
-                      </Badge>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Cobertura del mapa</span>
-                      <Badge className="bg-purple-100 text-purple-800">{stats.coverage}%</Badge>
-                    </div>
-
-                    <div className="pt-4 border-t">
-                      <Button className="w-full" onClick={getCurrentLocation}>
-                        <Navigation className="h-4 w-4 mr-2" />
-                        Actualizar Ubicación
-                      </Button>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Cobertura Geográfica</span>
+                      <span className="font-semibold text-green-600">Activa</span>
                     </div>
                   </div>
                 </CardContent>

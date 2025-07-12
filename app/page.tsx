@@ -1,442 +1,494 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { MobileNav } from "@/components/mobile-nav"
-import { UserMenu } from "@/components/user-menu"
-import { AuthGuard } from "@/components/auth-guard"
-import { DriveConnectionGuard } from "@/components/drive-connection-guard"
 import Link from "next/link"
 import Image from "next/image"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
-  Music2,
   Calendar,
-  CheckSquare,
-  Camera,
-  MessageCircle,
-  Lightbulb,
   Users,
-  Clock,
+  Music,
+  Camera,
+  CheckSquare,
+  Lightbulb,
   MapPin,
   Navigation,
-  Globe,
   Zap,
+  Settings,
+  Bell,
   TrendingUp,
+  Clock,
+  Globe,
+  BarChart3,
 } from "lucide-react"
+import { driveStorage } from "@/lib/google-drive-storage"
+
+interface DashboardStats {
+  totalEvents: number
+  totalSongs: number
+  totalPhotos: number
+  totalTasks: number
+  totalIdeas: number
+  totalVenues: number
+  completedTasks: number
+  upcomingEvents: number
+}
 
 export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<any>(null)
-  const [stats, setStats] = useState({
-    songs: 0,
-    events: 0,
-    tasks: 0,
-    photos: 0,
-    ideas: 0,
-    venues: 0,
-    gisPoints: 0,
+  const [stats, setStats] = useState<DashboardStats>({
+    totalEvents: 0,
+    totalSongs: 0,
+    totalPhotos: 0,
+    totalTasks: 0,
+    totalIdeas: 0,
+    totalVenues: 0,
+    completedTasks: 0,
+    upcomingEvents: 0,
   })
+  const [recentActivity, setRecentActivity] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [gisEnabled, setGisEnabled] = useState(true)
 
   useEffect(() => {
-    // Cargar usuario actual
     const user = localStorage.getItem("currentUser")
     if (user) {
       setCurrentUser(JSON.parse(user))
     }
-
-    // Cargar estadísticas
-    loadStats()
+    loadDashboardData()
   }, [])
 
-  const loadStats = () => {
-    const songsData = localStorage.getItem("bandSongs")
-    const eventsData = localStorage.getItem("bandEvents")
-    const tasksData = localStorage.getItem("bandTasks")
-    const photosData = localStorage.getItem("bandPhotos")
-    const ideasData = localStorage.getItem("bandIdeas")
-    const venuesData = localStorage.getItem("bandVenues")
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true)
 
-    setStats({
-      songs: songsData ? JSON.parse(songsData).length : 0,
-      events: eventsData ? JSON.parse(eventsData).length : 0,
-      tasks: tasksData ? JSON.parse(tasksData).length : 0,
-      photos: photosData ? JSON.parse(photosData).length : 0,
-      ideas: ideasData ? JSON.parse(ideasData).length : 0,
-      venues: venuesData ? JSON.parse(venuesData).length : 0,
-      gisPoints:
-        (venuesData ? JSON.parse(venuesData).length : 0) +
-        (eventsData ? JSON.parse(eventsData).filter((e: any) => e.geoLocation).length : 0),
-    })
+      // Load all data in parallel
+      const [events, songs, photos, tasks, ideas, venues] = await Promise.all([
+        driveStorage.loadData("events.json").catch(() => []),
+        driveStorage.loadData("songs.json").catch(() => []),
+        driveStorage.loadData("photo-sessions.json").catch(() => []),
+        driveStorage.loadData("tasks.json").catch(() => []),
+        driveStorage.loadData("ideas.json").catch(() => []),
+        driveStorage.loadData("venues.json").catch(() => []),
+      ])
+
+      // Calculate stats
+      const now = new Date()
+      const upcomingEvents = events?.filter((event: any) => new Date(event.date) > now).length || 0
+      const completedTasks = tasks?.filter((task: any) => task.completed).length || 0
+      const totalPhotos = photos?.reduce((sum: number, session: any) => sum + (session.photos?.length || 0), 0) || 0
+
+      setStats({
+        totalEvents: events?.length || 0,
+        totalSongs: songs?.length || 0,
+        totalPhotos,
+        totalTasks: tasks?.length || 0,
+        totalIdeas: ideas?.length || 0,
+        totalVenues: venues?.length || 0,
+        completedTasks,
+        upcomingEvents,
+      })
+
+      // Generate recent activity
+      const activity = []
+      if (events?.length > 0) {
+        activity.push({
+          type: "event",
+          title: "Próximo evento",
+          description: events[0].title,
+          time: "2 días",
+          icon: Calendar,
+        })
+      }
+      if (tasks?.length > 0) {
+        const pendingTasks = tasks.filter((task: any) => !task.completed)
+        if (pendingTasks.length > 0) {
+          activity.push({
+            type: "task",
+            title: "Tareas pendientes",
+            description: `${pendingTasks.length} tareas por completar`,
+            time: "Hoy",
+            icon: CheckSquare,
+          })
+        }
+      }
+      if (venues?.length > 0) {
+        activity.push({
+          type: "gis",
+          title: "Sistema GIS activo",
+          description: `${venues.length} venues registrados`,
+          time: "Actualizado",
+          icon: MapPin,
+        })
+      }
+
+      setRecentActivity(activity)
+    } catch (error) {
+      console.error("Error loading dashboard data:", error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const menuItems = [
-    {
-      title: "Canciones",
-      description: "Gestiona repertorio y grabaciones",
-      href: "/canciones",
-      icon: Music2,
-      color: "bg-gradient-to-br from-blue-500 to-blue-600",
-      stats: `${stats.songs} canciones`,
-    },
-    {
-      title: "Calendario",
-      description: "Ensayos, shows y eventos",
-      href: "/calendario",
-      icon: Calendar,
-      color: "bg-gradient-to-br from-green-500 to-green-600",
-      stats: `${stats.events} eventos`,
-    },
-    {
-      title: "Tareas",
-      description: "Organiza el trabajo de la banda",
-      href: "/tareas",
-      icon: CheckSquare,
-      color: "bg-gradient-to-br from-orange-500 to-orange-600",
-      stats: `${stats.tasks} tareas`,
-    },
-    {
-      title: "Fotos",
-      description: "Galería compartida en Drive",
-      href: "/fotos",
-      icon: Camera,
-      color: "bg-gradient-to-br from-purple-500 to-purple-600",
-      stats: `${stats.photos} fotos`,
-    },
-    {
-      title: "Ideas",
-      description: "Captura inspiración musical",
-      href: "/ideas",
-      icon: Lightbulb,
-      color: "bg-gradient-to-br from-yellow-500 to-yellow-600",
-      stats: `${stats.ideas} ideas`,
-    },
-    {
-      title: "Chat",
-      description: "Comunicación de la banda",
-      href: "/chat",
-      icon: MessageCircle,
-      color: "bg-gradient-to-br from-indigo-500 to-indigo-600",
-      stats: "Mensajes en tiempo real",
-    },
-    {
-      title: "Sistema GIS",
-      description: "Mapas y geolocalización",
-      href: "/gis",
-      icon: MapPin,
-      color: "bg-gradient-to-br from-emerald-500 to-emerald-600",
-      stats: `${stats.venues} venues, ${stats.gisPoints} puntos`,
-      isNew: true,
-    },
-  ]
+  const getGreeting = () => {
+    const hour = new Date().getHours()
+    if (hour < 12) return "Buenos días"
+    if (hour < 18) return "Buenas tardes"
+    return "Buenas noches"
+  }
 
-  const quickActions = [
-    { title: "Nueva Canción", href: "/canciones", icon: Music2, color: "text-blue-600" },
-    { title: "Programar Ensayo", href: "/calendario", icon: Calendar, color: "text-green-600" },
-    { title: "Subir Fotos", href: "/fotos", icon: Camera, color: "text-purple-600" },
-    { title: "Ver Mapa", href: "/gis", icon: Navigation, color: "text-emerald-600" },
-  ]
-
-  const recentActivity = [
-    { action: "Nueva canción agregada", item: "Sueños de Libertad", time: "hace 2 horas", type: "song" },
-    { action: "Ensayo programado", item: "Studio Central", time: "hace 4 horas", type: "event" },
-    { action: "Fotos subidas", item: "Sesión en vivo", time: "hace 1 día", type: "photo" },
-    { action: "Venue agregado", item: "Club de Jazz Downtown", time: "hace 2 días", type: "venue" },
-  ]
+  const getTaskCompletionPercentage = () => {
+    if (stats.totalTasks === 0) return 0
+    return Math.round((stats.completedTasks / stats.totalTasks) * 100)
+  }
 
   return (
-    <AuthGuard>
-      <DriveConnectionGuard>
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
-          {/* Header */}
-          <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40">
-            <div className="container mx-auto px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Image src="/logo.png" alt="Panta Rei Project" width={50} height={50} className="drop-shadow-lg" />
-                  <div>
-                    <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Panta Rei Project</h1>
-                    <p className="text-sm text-slate-600">Dashboard Musical con GIS</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                    <Globe className="h-3 w-3 mr-1" />
-                    GIS Activo
-                  </Badge>
-                  <UserMenu />
-                  <MobileNav />
-                </div>
-              </div>
-            </div>
-          </header>
-
-          <div className="container mx-auto p-6">
-            {/* Welcome Section */}
-            <div className="mb-12">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
-                <h2 className="text-3xl font-bold text-slate-800">¡Hola, {currentUser?.name || "Músico"}! 👋</h2>
-                <div className="w-16 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
-              </div>
-              <p className="text-slate-600 text-lg mb-6">
-                Gestiona tu banda con herramientas integradas y capacidades de mapeo geoespacial
-              </p>
-
-              {/* Quick Stats con GIS */}
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <Music2 className="h-6 w-6 text-blue-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.songs}</p>
-                    <p className="text-xs text-slate-600">Canciones</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <Calendar className="h-6 w-6 text-green-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.events}</p>
-                    <p className="text-xs text-slate-600">Eventos</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <CheckSquare className="h-6 w-6 text-orange-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.tasks}</p>
-                    <p className="text-xs text-slate-600">Tareas</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <Camera className="h-6 w-6 text-purple-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.photos}</p>
-                    <p className="text-xs text-slate-600">Fotos</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <Lightbulb className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.ideas}</p>
-                    <p className="text-xs text-slate-600">Ideas</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <MapPin className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.venues}</p>
-                    <p className="text-xs text-slate-600">Venues</p>
-                  </CardContent>
-                </Card>
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardContent className="p-4 text-center">
-                    <Globe className="h-6 w-6 text-cyan-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-slate-800">{stats.gisPoints}</p>
-                    <p className="text-xs text-slate-600">Puntos GIS</p>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            {/* Main Menu con GIS destacado */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-              {menuItems.map((item, index) => {
-                const IconComponent = item.icon
-                return (
-                  <Link key={index} href={item.href}>
-                    <Card className="group hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 bg-white/90 backdrop-blur-sm border-slate-200 relative overflow-hidden">
-                      {item.isNew && (
-                        <div className="absolute top-3 right-3">
-                          <Badge className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white border-0 shadow-lg">
-                            <Zap className="h-3 w-3 mr-1" />
-                            Nuevo
-                          </Badge>
-                        </div>
-                      )}
-                      <CardHeader className="pb-4">
-                        <div
-                          className={`w-12 h-12 ${item.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg`}
-                        >
-                          <IconComponent className="h-6 w-6 text-white" />
-                        </div>
-                        <CardTitle className="text-slate-800 group-hover:text-slate-900 transition-colors">
-                          {item.title}
-                        </CardTitle>
-                        <CardDescription className="text-slate-600 group-hover:text-slate-700 transition-colors">
-                          {item.description}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex items-center justify-between">
-                          <Badge variant="outline" className="text-slate-600 border-slate-300">
-                            {item.stats}
-                          </Badge>
-                          <div className="text-slate-400 group-hover:text-slate-600 transition-colors">→</div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                )
-              })}
-            </div>
-
-            {/* Layout de dos columnas */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Columna principal */}
-              <div className="lg:col-span-2 space-y-8">
-                {/* Acciones Rápidas */}
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-slate-800 flex items-center gap-2">
-                      <Zap className="h-5 w-5 text-amber-500" />
-                      Acciones Rápidas
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {quickActions.map((action, index) => {
-                        const ActionIcon = action.icon
-                        return (
-                          <Link key={index} href={action.href}>
-                            <Button
-                              variant="outline"
-                              className="h-auto flex-col gap-2 p-4 hover:shadow-lg transition-all duration-200 bg-white/50 hover:bg-white/80 border-slate-200"
-                            >
-                              <ActionIcon className={`h-5 w-5 ${action.color}`} />
-                              <span className="text-xs text-slate-700">{action.title}</span>
-                            </Button>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Sistema GIS - Destacado */}
-                <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200 shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-emerald-800 flex items-center gap-2">
-                      <Globe className="h-5 w-5" />
-                      Sistema GIS Activado
-                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300">Nuevo</Badge>
-                    </CardTitle>
-                    <CardDescription className="text-emerald-700">
-                      Ahora puedes gestionar venues, eventos y fotos con geolocalización
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                      <div className="text-center p-3 bg-white/60 rounded-lg">
-                        <MapPin className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-                        <p className="text-sm font-medium text-emerald-800">Mapas Interactivos</p>
-                        <p className="text-xs text-emerald-600">Visualiza ubicaciones</p>
-                      </div>
-                      <div className="text-center p-3 bg-white/60 rounded-lg">
-                        <Navigation className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-                        <p className="text-sm font-medium text-emerald-800">Geolocalización</p>
-                        <p className="text-xs text-emerald-600">GPS integrado</p>
-                      </div>
-                      <div className="text-center p-3 bg-white/60 rounded-lg">
-                        <TrendingUp className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-                        <p className="text-sm font-medium text-emerald-800">Análisis Espacial</p>
-                        <p className="text-xs text-emerald-600">Métricas y rutas</p>
-                      </div>
-                    </div>
-                    <Link href="/gis">
-                      <Button className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg">
-                        <Globe className="h-4 w-4 mr-2" />
-                        Explorar Sistema GIS
-                      </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Sidebar */}
-              <div className="space-y-6">
-                {/* Actividad Reciente */}
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-slate-800 flex items-center gap-2">
-                      <Clock className="h-5 w-5 text-blue-500" />
-                      Actividad Reciente
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {recentActivity.map((activity, index) => (
-                        <div key={index} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full mt-2 flex-shrink-0"></div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800">{activity.action}</p>
-                            <p className="text-xs text-slate-600 truncate">{activity.item}</p>
-                            <p className="text-xs text-slate-500">{activity.time}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Estado de la Banda */}
-                <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-slate-800 flex items-center gap-2">
-                      <Users className="h-5 w-5 text-green-500" />
-                      Estado de la Banda
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-600">Miembros activos</span>
-                        <Badge className="bg-green-100 text-green-800">3/3</Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-600">Próximo ensayo</span>
-                        <Badge className="bg-blue-100 text-blue-800">Hoy 19:00</Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-600">Canciones listas</span>
-                        <Badge className="bg-purple-100 text-purple-800">{stats.songs}</Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-600">Venues mapeados</span>
-                        <Badge className="bg-emerald-100 text-emerald-800">{stats.venues}</Badge>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Tips GIS */}
-                <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200 shadow-lg">
-                  <CardHeader>
-                    <CardTitle className="text-amber-800 flex items-center gap-2">
-                      <Lightbulb className="h-5 w-5" />
-                      Tips GIS
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="p-3 bg-white/60 rounded-lg">
-                        <p className="text-sm font-medium text-amber-800 mb-1">📍 Agrega Venues</p>
-                        <p className="text-xs text-amber-700">Registra estudios y salas para optimizar rutas</p>
-                      </div>
-                      <div className="p-3 bg-white/60 rounded-lg">
-                        <p className="text-sm font-medium text-amber-800 mb-1">🗺️ Geolocaliza Eventos</p>
-                        <p className="text-xs text-amber-700">Añade coordenadas GPS a tus shows</p>
-                      </div>
-                      <div className="p-3 bg-white/60 rounded-lg">
-                        <p className="text-sm font-medium text-amber-800 mb-1">📊 Análisis Espacial</p>
-                        <p className="text-xs text-amber-700">Descubre patrones en tu actividad musical</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-stone-100 to-amber-50">
+      <div className="container mx-auto p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-12">
+          <div className="flex items-center gap-4">
+            <Image src="/logo.png" alt="Panta Rei Project" width={80} height={80} className="drop-shadow-lg" />
+            <div>
+              <h1 className="text-4xl font-bold text-slate-800 mb-2 tracking-tight">
+                {getGreeting()}
+                {currentUser ? `, ${currentUser.name}` : ""}
+              </h1>
+              <p className="text-slate-600 text-lg">Bienvenido al centro de control de Panta Rei Project</p>
+              <div className="w-20 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full mt-2"></div>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm">
+              <Bell className="h-4 w-4 mr-2" />
+              Notificaciones
+            </Button>
+            <Button variant="outline" size="sm">
+              <Settings className="h-4 w-4 mr-2" />
+              Configuración
+            </Button>
+          </div>
         </div>
-      </DriveConnectionGuard>
-    </AuthGuard>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-100 rounded-xl">
+                  <Calendar className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">Eventos</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalEvents}</p>
+                  <p className="text-xs text-blue-600">{stats.upcomingEvents} próximos</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-100 rounded-xl">
+                  <Music className="h-6 w-6 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">Canciones</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalSongs}</p>
+                  <p className="text-xs text-purple-600">En repertorio</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-green-100 rounded-xl">
+                  <CheckSquare className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">Tareas</p>
+                  <p className="text-2xl font-bold text-slate-800">
+                    {stats.completedTasks}/{stats.totalTasks}
+                  </p>
+                  <p className="text-xs text-green-600">{getTaskCompletionPercentage()}% completado</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-100 rounded-xl">
+                  <Camera className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-600">Fotos</p>
+                  <p className="text-2xl font-bold text-slate-800">{stats.totalPhotos}</p>
+                  <p className="text-xs text-amber-600">En galería</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* GIS Section - Destacado */}
+        {gisEnabled && (
+          <Card className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white mb-8 shadow-xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <MapPin className="h-6 w-6" />
+                </div>
+                Sistema GIS Integrado
+                <Badge className="bg-white/20 text-white border-white/30">Nuevo</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Navigation className="h-5 w-5" />
+                    <span className="font-medium">Venues Registrados</span>
+                  </div>
+                  <p className="text-2xl font-bold">{stats.totalVenues}</p>
+                  <p className="text-sm opacity-90">Estudios, salas y venues mapeados</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-5 w-5" />
+                    <span className="font-medium">Cobertura Geográfica</span>
+                  </div>
+                  <p className="text-2xl font-bold">Activa</p>
+                  <p className="text-sm opacity-90">Mapas interactivos disponibles</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    <span className="font-medium">Análisis Espacial</span>
+                  </div>
+                  <p className="text-2xl font-bold">Disponible</p>
+                  <p className="text-sm opacity-90">Distancias y rutas optimizadas</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 mt-6">
+                <Link href="/gis">
+                  <Button className="bg-white text-emerald-600 hover:bg-white/90">
+                    <MapPin className="h-4 w-4 mr-2" />
+                    Abrir Sistema GIS
+                  </Button>
+                </Link>
+                <div className="flex items-center gap-2 text-sm opacity-90">
+                  <Zap className="h-4 w-4" />
+                  <span>Funcionalidades geoespaciales completas</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Quick Actions */}
+          <div className="lg:col-span-2 space-y-6">
+            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Acciones Rápidas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <Link href="/calendario">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex-col gap-2 w-full hover:bg-blue-50 hover:border-blue-200 bg-transparent"
+                    >
+                      <Calendar className="h-6 w-6 text-blue-600" />
+                      <span className="text-sm">Calendario</span>
+                    </Button>
+                  </Link>
+                  <Link href="/canciones">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex-col gap-2 w-full hover:bg-purple-50 hover:border-purple-200 bg-transparent"
+                    >
+                      <Music className="h-6 w-6 text-purple-600" />
+                      <span className="text-sm">Canciones</span>
+                    </Button>
+                  </Link>
+                  <Link href="/fotos">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex-col gap-2 w-full hover:bg-amber-50 hover:border-amber-200 bg-transparent"
+                    >
+                      <Camera className="h-6 w-6 text-amber-600" />
+                      <span className="text-sm">Fotos</span>
+                    </Button>
+                  </Link>
+                  <Link href="/tareas">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex-col gap-2 w-full hover:bg-green-50 hover:border-green-200 bg-transparent"
+                    >
+                      <CheckSquare className="h-6 w-6 text-green-600" />
+                      <span className="text-sm">Tareas</span>
+                    </Button>
+                  </Link>
+                  <Link href="/ideas">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex-col gap-2 w-full hover:bg-yellow-50 hover:border-yellow-200 bg-transparent"
+                    >
+                      <Lightbulb className="h-6 w-6 text-yellow-600" />
+                      <span className="text-sm">Ideas</span>
+                    </Button>
+                  </Link>
+                  <Link href="/gis">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex-col gap-2 w-full hover:bg-emerald-50 hover:border-emerald-200 bg-transparent"
+                    >
+                      <MapPin className="h-6 w-6 text-emerald-600" />
+                      <span className="text-sm">GIS</span>
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Recent Activity */}
+            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Actividad Reciente
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-200 rounded-lg animate-pulse"></div>
+                        <div className="flex-1 space-y-1">
+                          <div className="h-4 bg-slate-200 rounded animate-pulse"></div>
+                          <div className="h-3 bg-slate-200 rounded w-2/3 animate-pulse"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : recentActivity.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentActivity.map((activity, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="p-2 bg-slate-100 rounded-lg">
+                          <activity.icon className="h-5 w-5 text-slate-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-800">{activity.title}</p>
+                          <p className="text-sm text-slate-600">{activity.description}</p>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                          <Clock className="h-3 w-3" />
+                          {activity.time}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <TrendingUp className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                    <p className="text-slate-600">No hay actividad reciente</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* User Info */}
+            {currentUser && (
+              <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Mi Perfil
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                      {currentUser.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800">{currentUser.name}</p>
+                      <p className="text-sm text-slate-600">{currentUser.role}</p>
+                      <p className="text-xs text-slate-500">{currentUser.email}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Quick Stats */}
+            <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Resumen Rápido
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Ideas creativas</span>
+                    <Badge variant="secondary">{stats.totalIdeas}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Venues GIS</span>
+                    <Badge variant="secondary">{stats.totalVenues}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Progreso tareas</span>
+                    <Badge variant="secondary">{getTaskCompletionPercentage()}%</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Próximos eventos</span>
+                    <Badge variant="secondary">{stats.upcomingEvents}</Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Tips */}
+            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-800">
+                  <Lightbulb className="h-5 w-5" />
+                  Tip del Día
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-blue-700">
+                  💡 Usa el nuevo sistema GIS para encontrar venues cercanos y optimizar las rutas entre estudios y
+                  salas de ensayo.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }

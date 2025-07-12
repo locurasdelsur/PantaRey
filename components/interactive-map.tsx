@@ -1,61 +1,57 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import type { MapMarker, GeoLocation } from "@/lib/gis-types"
-import { GISUtils } from "@/lib/gis-utils"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Navigation } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from "@/components/ui"
+import { MapPin, Navigation } from "lucide-react"
+import type { Coordinates, Venue } from "@/lib/gis-types"
+import { calculateDistance, formatDistance } from "@/lib/gis-utils"
+import "leaflet/dist/leaflet.css"
+import L from "leaflet"
 
 interface InteractiveMapProps {
-  markers: MapMarker[]
-  center?: GeoLocation
+  venues: Venue[]
+  center?: Coordinates
   zoom?: number
   height?: string
-  showControls?: boolean
-  onMarkerClick?: (marker: MapMarker) => void
+  onVenueSelect?: (venue: Venue) => void
+  selectedVenueId?: string
 }
 
-export function InteractiveMap({
-  markers = [],
-  center,
+export default function InteractiveMap({
+  venues,
+  center = { lat: 40.4168, lng: -3.7038 }, // Madrid default
   zoom = 10,
   height = "400px",
-  showControls = true,
-  onMarkerClick,
+  onVenueSelect,
+  selectedVenueId,
 }: InteractiveMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<any>(null)
-  const [userLocation, setUserLocation] = useState<GeoLocation | null>(null)
-  const [selectedMarker, setSelectedMarker] = useState<MapMarker | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null)
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false)
 
-  // Inicializar mapa con Leaflet
+  // Initialize Leaflet map
   useEffect(() => {
-    if (typeof window === "undefined") return
+    if (!mapRef.current) return
 
+    // Dynamically import Leaflet to avoid SSR issues
     const initMap = async () => {
-      // Importar Leaflet dinámicamente
-      const L = (await import("leaflet")).default
-      await import("leaflet/dist/leaflet.css")
+      const L = await import("leaflet").then((module) => module.default)
 
-      if (mapRef.current && !map) {
-        const defaultCenter = center || { latitude: -34.6037, longitude: -58.3816 } // Buenos Aires por defecto
+      // Create map
+      const mapInstance = L.map(mapRef.current!).setView([center.lat, center.lng], zoom)
 
-        const leafletMap = L.map(mapRef.current).setView([defaultCenter.latitude, defaultCenter.longitude], zoom)
+      // Add tile layer
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(mapInstance)
 
-        // Agregar capa de mapa
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "© OpenStreetMap contributors",
-        }).addTo(leafletMap)
-
-        setMap(leafletMap)
-        setIsLoading(false)
-      }
+      setMap(mapInstance)
     }
 
     initMap()
 
+    // Cleanup function
     return () => {
       if (map) {
         map.remove()
@@ -63,157 +59,235 @@ export function InteractiveMap({
     }
   }, [])
 
-  // Actualizar marcadores cuando cambien
+  // Update venues on map
   useEffect(() => {
-    if (!map || typeof window === "undefined") return
+    if (!map) return
 
-    const updateMarkers = async () => {
-      const L = (await import("leaflet")).default
+    // Clear existing markers
+    map.eachLayer((layer: any) => {
+      if (layer.options && layer.options.isVenueMarker) {
+        map.removeLayer(layer)
+      }
+    })
 
-      // Limpiar marcadores existentes
-      map.eachLayer((layer: any) => {
-        if (layer instanceof L.Marker) {
-          map.removeLayer(layer)
+    // Add venue markers
+    venues.forEach((venue) => {
+      const isSelected = venue.id === selectedVenueId
+
+      // Create custom icon based on venue type
+      const iconColor = getVenueColor(venue.type)
+      const iconHtml = `
+        <div style="
+          background-color: ${isSelected ? "#f59e0b" : iconColor};
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 12px;
+          font-weight: bold;
+        ">
+          ${getVenueIcon(venue.type)}
+        </div>
+      `
+
+      const customIcon = L.divIcon({
+        html: iconHtml,
+        className: "custom-venue-marker",
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      })
+
+      const marker = L.marker([venue.coordinates.lat, venue.coordinates.lng], {
+        icon: customIcon,
+        isVenueMarker: true,
+      }).addTo(map)
+
+      // Add popup
+      const popupContent = `
+        <div style="min-width: 200px;">
+          <h3 style="margin: 0 0 8px 0; font-weight: bold;">${venue.name}</h3>
+          <p style="margin: 0 0 4px 0; color: #666; font-size: 14px;">${venue.address}</p>
+          <div style="display: flex; align-items: center; gap: 8px; margin: 8px 0;">
+            <span style="
+              background-color: ${iconColor};
+              color: white;
+              padding: 2px 8px;
+              border-radius: 12px;
+              font-size: 12px;
+              text-transform: capitalize;
+            ">${venue.type}</span>
+            ${venue.capacity ? `<span style="color: #666; font-size: 12px;">Cap: ${venue.capacity}</span>` : ""}
+          </div>
+          ${venue.notes ? `<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">${venue.notes}</p>` : ""}
+        </div>
+      `
+
+      marker.bindPopup(popupContent)
+
+      // Add click handler
+      marker.on("click", () => {
+        if (onVenueSelect) {
+          onVenueSelect(venue)
         }
       })
+    })
+  }, [map, venues, selectedVenueId, onVenueSelect])
 
-      // Agregar nuevos marcadores
-      markers.forEach((marker) => {
-        const icon = L.divIcon({
-          html: `
-            <div class="flex items-center justify-center w-8 h-8 rounded-full shadow-lg ${getMarkerColor(marker.type)} text-white">
-              ${getMarkerIcon(marker.type)}
-            </div>
-          `,
-          className: "custom-marker",
-          iconSize: [32, 32],
-          iconAnchor: [16, 16],
-        })
+  // Add user location marker
+  useEffect(() => {
+    if (!map || !userLocation) return
 
-        const leafletMarker = L.marker([marker.position.latitude, marker.position.longitude], { icon })
-          .addTo(map)
-          .bindPopup(`
-            <div class="p-2">
-              <h3 class="font-bold text-sm">${marker.title}</h3>
-              ${marker.description ? `<p class="text-xs text-gray-600 mt-1">${marker.description}</p>` : ""}
-            </div>
-          `)
+    // Remove existing user location marker
+    map.eachLayer((layer: any) => {
+      if (layer.options && layer.options.isUserLocation) {
+        map.removeLayer(layer)
+      }
+    })
 
-        leafletMarker.on("click", () => {
-          setSelectedMarker(marker)
-          onMarkerClick?.(marker)
+    // Add user location marker
+    const userIcon = L.divIcon({
+      html: `
+        <div style="
+          background-color: #3b82f6;
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          border: 3px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        "></div>
+      `,
+      className: "user-location-marker",
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    })
+
+    L.marker([userLocation.lat, userLocation.lng], {
+      icon: userIcon,
+      isUserLocation: true,
+    })
+      .addTo(map)
+      .bindPopup("Tu ubicación")
+  }, [map, userLocation])
+
+  const getUserLocation = async () => {
+    setIsLoadingLocation(true)
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000,
         })
       })
 
-      // Ajustar vista si hay marcadores
-      if (markers.length > 0) {
-        const bounds = markers.map((m) => [m.position.latitude, m.position.longitude])
-        map.fitBounds(bounds, { padding: [20, 20] })
+      const coords = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
       }
-    }
 
-    updateMarkers()
-  }, [map, markers])
+      setUserLocation(coords)
 
-  const getMarkerColor = (type: string): string => {
-    switch (type) {
-      case "event":
-        return "bg-blue-500"
-      case "venue":
-        return "bg-green-500"
-      case "photo":
-        return "bg-purple-500"
-      case "fan":
-        return "bg-orange-500"
-      default:
-        return "bg-gray-500"
+      // Center map on user location
+      if (map) {
+        map.setView([coords.lat, coords.lng], 12)
+      }
+    } catch (error) {
+      console.error("Error getting location:", error)
+    } finally {
+      setIsLoadingLocation(false)
     }
   }
 
-  const getMarkerIcon = (type: string): string => {
+  const getVenueColor = (type: string): string => {
     switch (type) {
-      case "event":
+      case "studio":
+        return "#ef4444"
+      case "venue":
+        return "#8b5cf6"
+      case "rehearsal":
+        return "#10b981"
+      default:
+        return "#6b7280"
+    }
+  }
+
+  const getVenueIcon = (type: string): string => {
+    switch (type) {
+      case "studio":
         return "🎵"
       case "venue":
-        return "🏛️"
-      case "photo":
-        return "📷"
-      case "fan":
-        return "👤"
+        return "🎤"
+      case "rehearsal":
+        return "🥁"
       default:
         return "📍"
     }
   }
 
-  const getCurrentLocation = async () => {
-    try {
-      const location = await GISUtils.getCurrentLocation()
-      setUserLocation(location)
-
-      if (map) {
-        const L = (await import("leaflet")).default
-
-        // Agregar marcador de ubicación actual
-        const userIcon = L.divIcon({
-          html: '<div class="w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-lg animate-pulse"></div>',
-          className: "user-location-marker",
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-        })
-
-        L.marker([location.latitude, location.longitude], { icon: userIcon })
-          .addTo(map)
-          .bindPopup("Tu ubicación actual")
-
-        map.setView([location.latitude, location.longitude], 15)
-      }
-    } catch (error) {
-      console.error("Error getting location:", error)
-    }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center" style={{ height }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-          <p className="text-sm text-gray-600">Cargando mapa...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="relative">
-      <div
-        ref={mapRef}
-        style={{ height, width: "100%" }}
-        className="rounded-lg overflow-hidden border border-gray-200"
-      />
-
-      {showControls && (
-        <div className="absolute top-4 right-4 flex flex-col gap-2">
-          <Button size="sm" onClick={getCurrentLocation} className="bg-white text-gray-700 hover:bg-gray-50 shadow-lg">
-            <Navigation className="h-4 w-4" />
-          </Button>
+    <Card className="w-full">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <MapPin className="h-5 w-5" />
+            Mapa Interactivo
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={getUserLocation} disabled={isLoadingLocation}>
+              <Navigation className="h-4 w-4 mr-1" />
+              {isLoadingLocation ? "Ubicando..." : "Mi ubicación"}
+            </Button>
+          </div>
         </div>
-      )}
-
-      {selectedMarker && (
-        <Card className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <span className={`w-3 h-3 rounded-full ${getMarkerColor(selectedMarker.type)}`}></span>
-              {selectedMarker.title}
-            </CardTitle>
-          </CardHeader>
-          {selectedMarker.description && (
-            <CardContent className="pt-0">
-              <p className="text-xs text-gray-600">{selectedMarker.description}</p>
-            </CardContent>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" className="text-xs">
+            <span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
+            Estudios
+          </Badge>
+          <Badge variant="secondary" className="text-xs">
+            <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
+            Venues
+          </Badge>
+          <Badge variant="secondary" className="text-xs">
+            <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+            Ensayo
+          </Badge>
+          {userLocation && (
+            <Badge variant="secondary" className="text-xs">
+              <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
+              Tu ubicación
+            </Badge>
           )}
-        </Card>
-      )}
-    </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div ref={mapRef} style={{ height, width: "100%" }} className="rounded-b-lg overflow-hidden" />
+        {userLocation && venues.length > 0 && (
+          <div className="p-4 border-t bg-slate-50">
+            <h4 className="font-medium text-sm mb-2">Venues más cercanos:</h4>
+            <div className="space-y-1">
+              {venues
+                .map((venue) => ({
+                  ...venue,
+                  distance: calculateDistance(userLocation, venue.coordinates),
+                }))
+                .sort((a, b) => a.distance - b.distance)
+                .slice(0, 3)
+                .map((venue) => (
+                  <div key={venue.id} className="flex items-center justify-between text-sm">
+                    <span className="text-slate-700">{venue.name}</span>
+                    <span className="text-slate-500">{formatDistance(venue.distance)}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
