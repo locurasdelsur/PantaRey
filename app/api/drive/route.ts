@@ -74,7 +74,6 @@ export async function POST(request: Request) {
     const mimeType = formData.get("mimeType") as string
     const date = formData.get("date") as string // Fecha para la carpeta de sesión
     const location = formData.get("location") as string
-    const photographer = formData.get("photographer") as string
     const title = formData.get("title") as string
     const tags = formData.get("tags") as string
 
@@ -128,7 +127,6 @@ export async function POST(request: Request) {
       // Puedes añadir propiedades personalizadas si las necesitas
       appProperties: {
         location: location,
-        photographer: photographer,
         title: title,
         tags: tags,
       },

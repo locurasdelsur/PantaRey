@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Tag, User, Loader2 } from "lucide-react"
+import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Tag, Loader2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -26,7 +26,6 @@ interface Photo {
   title: string
   date: string // Fecha de la foto individual
   location: string
-  photographer: string
   tags: string[]
 }
 
@@ -47,12 +46,11 @@ export default function PhotosPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   const [newPhoto, setNewPhoto] = useState({
-    file: null as File | null, // Para el archivo real
+    files: [] as File[], // Cambiar a array de archivos
     title: "",
-    date: new Date().toISOString().split("T")[0], // Fecha actual por defecto
+    date: new Date().toISOString().split("T")[0],
     location: "",
-    photographer: "",
-    tags: "", // string separado por comas
+    tags: "",
   })
 
   const months = [
@@ -83,50 +81,57 @@ export default function PhotosPage() {
   }
 
   const handleAddPhoto = async () => {
-    if (!newPhoto.title || !newPhoto.file || !newPhoto.date || !newPhoto.location || !newPhoto.photographer) {
-      setUploadError("Por favor, completa todos los campos obligatorios y selecciona un archivo.")
+    if (!newPhoto.title || newPhoto.files.length === 0 || !newPhoto.date || !newPhoto.location) {
+      setUploadError("Por favor, completa todos los campos obligatorios y selecciona al menos un archivo.")
       return
     }
 
     setIsUploading(true)
     setUploadError(null)
 
-    const formData = new FormData()
-    formData.append("file", newPhoto.file)
-    formData.append("fileName", newPhoto.file.name)
-    formData.append("mimeType", newPhoto.file.type)
-    formData.append("date", newPhoto.date) // Para crear la carpeta por fecha
-    formData.append("location", newPhoto.location)
-    formData.append("photographer", newPhoto.photographer)
-    formData.append("title", newPhoto.title)
-    formData.append("tags", newPhoto.tags)
-
     try {
-      const response = await fetch("/api/drive", {
-        method: "POST",
-        body: formData,
-      })
+      const uploadedPhotos: Photo[] = []
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.details || "Fallo al subir la foto a Google Drive.")
+      // Subir cada archivo individualmente
+      for (let i = 0; i < newPhoto.files.length; i++) {
+        const file = newPhoto.files[i]
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("fileName", file.name)
+        formData.append("mimeType", file.type)
+        formData.append("date", newPhoto.date)
+        formData.append("location", newPhoto.location)
+        formData.append("title", `${newPhoto.title} ${i + 1}`)
+        formData.append("tags", newPhoto.tags)
+
+        const response = await fetch("/api/drive", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.details || `Fallo al subir la foto ${i + 1} a Google Drive.`)
+        }
+
+        const result = await response.json()
+        const uploadedPhoto: Photo = {
+          id: Date.now() + i, // ID único para cada foto
+          googleDriveId: result.file.id,
+          url: result.file.webViewLink,
+          title: `${newPhoto.title} ${i + 1}`,
+          date: newPhoto.date,
+          location: newPhoto.location,
+          tags: newPhoto.tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter((tag) => tag !== ""),
+        }
+
+        uploadedPhotos.push(uploadedPhoto)
       }
 
-      const result = await response.json()
-      const uploadedPhoto: Photo = {
-        id: Date.now(), // Usar un ID local temporal, o el ID de Google Drive si lo devuelve
-        googleDriveId: result.file.id,
-        url: result.file.webViewLink, // Usar el webViewLink para mostrar
-        title: newPhoto.title,
-        date: newPhoto.date,
-        location: newPhoto.location,
-        photographer: newPhoto.photographer,
-        tags: newPhoto.tags
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter((tag) => tag !== ""),
-      }
-
+      // Actualizar las sesiones con todas las fotos subidas
       setPhotoSessions((prevSessions) => {
         const existingSessionIndex = prevSessions.findIndex((session) => session.date === newPhoto.date)
 
@@ -134,7 +139,7 @@ export default function PhotosPage() {
           const updatedSessions = [...prevSessions]
           updatedSessions[existingSessionIndex] = {
             ...updatedSessions[existingSessionIndex],
-            photos: [...updatedSessions[existingSessionIndex].photos, uploadedPhoto],
+            photos: [...updatedSessions[existingSessionIndex].photos, ...uploadedPhotos],
           }
           return updatedSessions
         } else {
@@ -143,7 +148,7 @@ export default function PhotosPage() {
             date: newPhoto.date,
             title: `Sesión de Fotos del ${new Date(newPhoto.date).toLocaleDateString("es-ES", { year: "numeric", month: "long", day: "numeric" })}`,
             location: newPhoto.location,
-            photos: [uploadedPhoto],
+            photos: uploadedPhotos,
           }
           return [...prevSessions, newSession]
         }
@@ -151,11 +156,10 @@ export default function PhotosPage() {
 
       // Resetear formulario y cerrar diálogo
       setNewPhoto({
-        file: null,
+        files: [],
         title: "",
         date: new Date().toISOString().split("T")[0],
         location: "",
-        photographer: "",
         tags: "",
       })
       setIsAddPhotoDialogOpen(false)
@@ -204,11 +208,20 @@ export default function PhotosPage() {
                 <Input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setNewPhoto({ ...newPhoto, file: e.target.files ? e.target.files[0] : null })}
+                  multiple
+                  onChange={(e) =>
+                    setNewPhoto({ ...newPhoto, files: e.target.files ? Array.from(e.target.files) : [] })
+                  }
                   className="col-span-4 bg-slate-50 border-slate-200"
                 />
+                {newPhoto.files.length > 0 && (
+                  <p className="text-sm text-slate-600">
+                    {newPhoto.files.length} archivo{newPhoto.files.length > 1 ? "s" : ""} seleccionado
+                    {newPhoto.files.length > 1 ? "s" : ""}
+                  </p>
+                )}
                 <Input
-                  placeholder="Título de la foto"
+                  placeholder="Título base para las fotos"
                   value={newPhoto.title}
                   onChange={(e) => setNewPhoto({ ...newPhoto, title: e.target.value })}
                   className="col-span-4 bg-slate-50 border-slate-200"
@@ -224,12 +237,6 @@ export default function PhotosPage() {
                   value={newPhoto.location}
                   onChange={(e) => setNewPhoto({ ...newPhoto, location: e.target.value })}
                   className="col-span-2 bg-slate-50 border-slate-200"
-                />
-                <Input
-                  placeholder="Fotógrafo (ej: Juan Pérez)"
-                  value={newPhoto.photographer}
-                  onChange={(e) => setNewPhoto({ ...newPhoto, photographer: e.target.value })}
-                  className="col-span-4 bg-slate-50 border-slate-200"
                 />
                 <Input
                   placeholder="Etiquetas (separadas por coma, ej: show, ensayo, backstage)"
@@ -248,10 +255,10 @@ export default function PhotosPage() {
                   {isUploading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Subiendo...
+                      Subiendo {newPhoto.files.length} foto{newPhoto.files.length > 1 ? "s" : ""}...
                     </>
                   ) : (
-                    "Subir Foto"
+                    `Subir ${newPhoto.files.length > 0 ? newPhoto.files.length : ""} Foto${newPhoto.files.length > 1 ? "s" : ""}`
                   )}
                 </Button>
               </DialogFooter>
@@ -332,10 +339,6 @@ export default function PhotosPage() {
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-center p-2">
                             <p className="text-sm font-medium">{photo.title}</p>
-                            <p className="text-xs flex items-center justify-center gap-1">
-                              <User className="h-3 w-3" />
-                              {photo.photographer}
-                            </p>
                           </div>
                         </div>
                       </div>
@@ -373,10 +376,6 @@ export default function PhotosPage() {
                   <span className="flex items-center gap-1">
                     <MapPin className="h-4 w-4" />
                     {selectedPhoto.location}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <User className="h-4 w-4" />
-                    {selectedPhoto.photographer}
                   </span>
                 </DialogDescription>
               </DialogHeader>
