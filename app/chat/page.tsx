@@ -258,8 +258,8 @@ export default function ChatPage() {
                   <h3 className="font-medium text-gray-800">Miembros Online</h3>
                   <p className="text-2xl font-bold text-gray-900">3</p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </CardContent>
           </Card>
         </div>
       </div>
