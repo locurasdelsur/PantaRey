@@ -3,48 +3,47 @@ import { NextResponse } from "next/server"
 
 // Nuevas variables de entorno para la Cuenta de Servicio
 const SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n") // Reemplaza \n por \n
+const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n")
 
 // ID de la carpeta principal donde se guardarán las sesiones de fotos
 const PARENT_FOLDER_ID = "1yH0gAupFxeQsPCllgECRAs_yhXlZBQ8Z"
 
 let drive: any
 
-if (!SERVICE_ACCOUNT_EMAIL || !PRIVATE_KEY) {
-  console.error("Faltan variables de entorno de Google Service Account. Asegúrate de configurarlas.")
-} else {
-  const jwtClient = new google.auth.JWT(
-    SERVICE_ACCOUNT_EMAIL,
-    undefined, // keyFile (no se usa si se proporciona la clave directamente)
-    PRIVATE_KEY,
-    ["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/drive.file"], // Scopes necesarios para leer y escribir
-  )
+async function initializeDrive() {
+  if (!SERVICE_ACCOUNT_EMAIL || !PRIVATE_KEY) {
+    throw new Error("Faltan variables de entorno de Google Service Account")
+  }
 
-  drive = google.drive({
+  const jwtClient = new google.auth.JWT(SERVICE_ACCOUNT_EMAIL, undefined, PRIVATE_KEY, [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.file",
+  ])
+
+  await jwtClient.authorize()
+
+  return google.drive({
     version: "v3",
     auth: jwtClient,
   })
 }
 
 export async function GET(request: Request) {
-  if (!drive) {
-    return NextResponse.json(
-      { error: "Configuración de Google Drive incompleta. Contacta al administrador." },
-      { status: 500 },
-    )
-  }
-
-  const { searchParams } = new URL(request.url)
-  const folderId = searchParams.get("folderId") || PARENT_FOLDER_ID // Usar la carpeta principal si no se especifica
-
-  if (!folderId) {
-    return NextResponse.json({ error: "Se requiere el ID de la carpeta (folderId)." }, { status: 400 })
-  }
-
   try {
+    if (!drive) {
+      drive = await initializeDrive()
+    }
+
+    const { searchParams } = new URL(request.url)
+    const folderId = searchParams.get("folderId") || PARENT_FOLDER_ID
+
+    if (!folderId) {
+      return NextResponse.json({ error: "Se requiere el ID de la carpeta (folderId)." }, { status: 400 })
+    }
+
     const res = await drive.files.list({
       q: `'${folderId}' in parents and trashed = false`,
-      fields: "files(id, name, mimeType, webContentLink, webViewLink)", // Añadir webViewLink
+      fields: "files(id, name, mimeType, webContentLink, webViewLink)",
       spaces: "drive",
     })
 
@@ -60,19 +59,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!drive) {
-    return NextResponse.json(
-      { error: "Configuración de Google Drive incompleta. Contacta al administrador." },
-      { status: 500 },
-    )
-  }
-
   try {
+    if (!drive) {
+      drive = await initializeDrive()
+    }
+
     const formData = await request.formData()
     const file = formData.get("file") as File | null
     const fileName = formData.get("fileName") as string
     const mimeType = formData.get("mimeType") as string
-    const date = formData.get("date") as string // Fecha para la carpeta de sesión
+    const date = formData.get("date") as string
     const location = formData.get("location") as string
     const title = formData.get("title") as string
     const tags = formData.get("tags") as string
@@ -124,18 +120,17 @@ export async function POST(request: Request) {
     const fileMetadata = {
       name: fileName,
       parents: [sessionFolderId],
-      // Puedes añadir propiedades personalizadas si las necesitas
       appProperties: {
-        location: location,
-        title: title,
-        tags: tags,
+        location: location || "",
+        title: title || "",
+        tags: tags || "",
       },
     }
 
     const uploadedFile = await drive.files.create({
       resource: fileMetadata,
       media: media,
-      fields: "id, name, webContentLink, webViewLink", // Solicitar webViewLink
+      fields: "id, name, webContentLink, webViewLink",
     })
 
     return NextResponse.json({
@@ -143,9 +138,13 @@ export async function POST(request: Request) {
       file: uploadedFile.data,
     })
   } catch (error: any) {
-    console.error("Error al subir archivo a Google Drive:", error.message)
+    console.error("Error al subir archivo a Google Drive:", error)
     return NextResponse.json(
-      { error: "Fallo al subir archivo a Google Drive", details: error.message },
+      {
+        error: "Fallo al subir archivo a Google Drive",
+        details: error.message,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      },
       { status: 500 },
     )
   }

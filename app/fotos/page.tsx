@@ -95,31 +95,40 @@ export default function PhotosPage() {
       // Subir cada archivo individualmente
       for (let i = 0; i < newPhoto.files.length; i++) {
         const file = newPhoto.files[i]
+
+        // Validar que el archivo sea una imagen
+        if (!file.type.startsWith("image/")) {
+          throw new Error(`El archivo ${file.name} no es una imagen válida.`)
+        }
+
         const formData = new FormData()
         formData.append("file", file)
         formData.append("fileName", file.name)
         formData.append("mimeType", file.type)
         formData.append("date", newPhoto.date)
         formData.append("location", newPhoto.location)
-        formData.append("title", `${newPhoto.title} ${i + 1}`)
+        formData.append("title", newPhoto.files.length > 1 ? `${newPhoto.title} ${i + 1}` : newPhoto.title)
         formData.append("tags", newPhoto.tags)
+
+        console.log(`Subiendo archivo ${i + 1}/${newPhoto.files.length}: ${file.name}`)
 
         const response = await fetch("/api/drive", {
           method: "POST",
           body: formData,
         })
 
+        const result = await response.json()
+
         if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.details || `Fallo al subir la foto ${i + 1} a Google Drive.`)
+          console.error("Error response:", result)
+          throw new Error(result.details || result.error || `Fallo al subir la foto ${i + 1} a Google Drive.`)
         }
 
-        const result = await response.json()
         const uploadedPhoto: Photo = {
-          id: Date.now() + i, // ID único para cada foto
+          id: Date.now() + i,
           googleDriveId: result.file.id,
           url: result.file.webViewLink,
-          title: `${newPhoto.title} ${i + 1}`,
+          title: newPhoto.files.length > 1 ? `${newPhoto.title} ${i + 1}` : newPhoto.title,
           date: newPhoto.date,
           location: newPhoto.location,
           tags: newPhoto.tags
@@ -129,6 +138,7 @@ export default function PhotosPage() {
         }
 
         uploadedPhotos.push(uploadedPhoto)
+        console.log(`Archivo ${i + 1} subido exitosamente`)
       }
 
       // Actualizar las sesiones con todas las fotos subidas
@@ -163,7 +173,9 @@ export default function PhotosPage() {
         tags: "",
       })
       setIsAddPhotoDialogOpen(false)
+      console.log("Todas las fotos subidas exitosamente")
     } catch (e: any) {
+      console.error("Error al subir fotos:", e)
       setUploadError(e.message)
     } finally {
       setIsUploading(false)
