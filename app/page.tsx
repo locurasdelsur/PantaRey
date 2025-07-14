@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -20,8 +20,8 @@ import {
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { useSupabase } from "@/components/auth/supabase-provider"
 import { useRouter } from "next/navigation"
+import { deleteCookie } from "cookies-next" // Importa para eliminar la cookie
 
 export default function Dashboard() {
   const [recentActivity] = useState([
@@ -50,24 +50,10 @@ export default function Dashboard() {
     developing: 4,
   })
 
-  const supabase = useSupabase()
   const router = useRouter()
-  const [userEmail, setUserEmail] = useState<string | null>(null)
 
-  useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (user) {
-        setUserEmail(user.email)
-      }
-    }
-    getUser()
-  }, [supabase])
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
+  const handleLogout = () => {
+    deleteCookie("is_authenticated") // Elimina la cookie de autenticación
     router.push("/login")
   }
 
@@ -83,20 +69,18 @@ export default function Dashboard() {
           <p className="text-xl text-slate-600 font-light">Centro de gestión musical</p>
           <div className="w-24 h-1 bg-gradient-to-r from-amber-400 to-amber-600 mx-auto mt-4 rounded-full"></div>
 
-          {userEmail && (
-            <div className="mt-6 flex items-center justify-center gap-4">
-              <span className="text-slate-700 text-lg font-medium">Bienvenido, {userEmail}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="border-slate-300 text-slate-600 hover:bg-slate-100 bg-transparent"
-              >
-                <LogOut className="h-4 w-4 mr-2" />
-                Cerrar Sesión
-              </Button>
-            </div>
-          )}
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <span className="text-slate-700 text-lg font-medium">Bienvenido</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="border-slate-300 text-slate-600 hover:bg-slate-100 bg-transparent"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Cerrar Sesión
+            </Button>
+          </div>
         </div>
 
         {/* Quick Stats */}
