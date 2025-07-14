@@ -15,13 +15,14 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Tag, User } from "lucide-react"
+import { Camera, Plus, Calendar, MapPin, ChevronLeft, ChevronRight, Tag, User, Loader2 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
 interface Photo {
   id: number
-  url: string
+  googleDriveId: string // ID del archivo en Google Drive
+  url: string // webViewLink de Google Drive
   title: string
   date: string // Fecha de la foto individual
   location: string
@@ -39,12 +40,14 @@ interface PhotoSession {
 
 export default function PhotosPage() {
   const [photoSessions, setPhotoSessions] = useState<PhotoSession[]>([])
-  const [selectedMonth, setSelectedMonth] = useState("all") // Cambiado a "all" por defecto
+  const [selectedMonth, setSelectedMonth] = useState("all")
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
   const [isAddPhotoDialogOpen, setIsAddPhotoDialogOpen] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const [newPhoto, setNewPhoto] = useState({
-    url: "",
+    file: null as File | null, // Para el archivo real
     title: "",
     date: new Date().toISOString().split("T")[0], // Fecha actual por defecto
     location: "",
@@ -79,59 +82,88 @@ export default function PhotosPage() {
     setSelectedPhoto(allPhotos[newIndex])
   }
 
-  const handleAddPhoto = () => {
-    if (!newPhoto.title || !newPhoto.url || !newPhoto.date || !newPhoto.location || !newPhoto.photographer) {
-      alert("Por favor, completa todos los campos obligatorios.")
+  const handleAddPhoto = async () => {
+    if (!newPhoto.title || !newPhoto.file || !newPhoto.date || !newPhoto.location || !newPhoto.photographer) {
+      setUploadError("Por favor, completa todos los campos obligatorios y selecciona un archivo.")
       return
     }
 
-    const photo: Photo = {
-      id: Date.now(),
-      url: newPhoto.url,
-      title: newPhoto.title,
-      date: newPhoto.date,
-      location: newPhoto.location,
-      photographer: newPhoto.photographer,
-      tags: newPhoto.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter((tag) => tag !== ""),
-    }
+    setIsUploading(true)
+    setUploadError(null)
 
-    setPhotoSessions((prevSessions) => {
-      const existingSessionIndex = prevSessions.findIndex((session) => session.date === newPhoto.date)
+    const formData = new FormData()
+    formData.append("file", newPhoto.file)
+    formData.append("fileName", newPhoto.file.name)
+    formData.append("mimeType", newPhoto.file.type)
+    formData.append("date", newPhoto.date) // Para crear la carpeta por fecha
+    formData.append("location", newPhoto.location)
+    formData.append("photographer", newPhoto.photographer)
+    formData.append("title", newPhoto.title)
+    formData.append("tags", newPhoto.tags)
 
-      if (existingSessionIndex > -1) {
-        // Añadir a la sesión existente
-        const updatedSessions = [...prevSessions]
-        updatedSessions[existingSessionIndex] = {
-          ...updatedSessions[existingSessionIndex],
-          photos: [...updatedSessions[existingSessionIndex].photos, photo],
-        }
-        return updatedSessions
-      } else {
-        // Crear nueva sesión
-        const newSession: PhotoSession = {
-          id: Date.now(),
-          date: newPhoto.date,
-          title: `Sesión de Fotos del ${new Date(newPhoto.date).toLocaleDateString("es-ES", { year: "numeric", month: "long", day: "numeric" })}`,
-          location: newPhoto.location, // Usar la ubicación de la primera foto en la sesión
-          photos: [photo],
-        }
-        return [...prevSessions, newSession]
+    try {
+      const response = await fetch("/api/drive", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.details || "Fallo al subir la foto a Google Drive.")
       }
-    })
 
-    // Resetear formulario y cerrar diálogo
-    setNewPhoto({
-      url: "",
-      title: "",
-      date: new Date().toISOString().split("T")[0],
-      location: "",
-      photographer: "",
-      tags: "",
-    })
-    setIsAddPhotoDialogOpen(false)
+      const result = await response.json()
+      const uploadedPhoto: Photo = {
+        id: Date.now(), // Usar un ID local temporal, o el ID de Google Drive si lo devuelve
+        googleDriveId: result.file.id,
+        url: result.file.webViewLink, // Usar el webViewLink para mostrar
+        title: newPhoto.title,
+        date: newPhoto.date,
+        location: newPhoto.location,
+        photographer: newPhoto.photographer,
+        tags: newPhoto.tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag !== ""),
+      }
+
+      setPhotoSessions((prevSessions) => {
+        const existingSessionIndex = prevSessions.findIndex((session) => session.date === newPhoto.date)
+
+        if (existingSessionIndex > -1) {
+          const updatedSessions = [...prevSessions]
+          updatedSessions[existingSessionIndex] = {
+            ...updatedSessions[existingSessionIndex],
+            photos: [...updatedSessions[existingSessionIndex].photos, uploadedPhoto],
+          }
+          return updatedSessions
+        } else {
+          const newSession: PhotoSession = {
+            id: Date.now(),
+            date: newPhoto.date,
+            title: `Sesión de Fotos del ${new Date(newPhoto.date).toLocaleDateString("es-ES", { year: "numeric", month: "long", day: "numeric" })}`,
+            location: newPhoto.location,
+            photos: [uploadedPhoto],
+          }
+          return [...prevSessions, newSession]
+        }
+      })
+
+      // Resetear formulario y cerrar diálogo
+      setNewPhoto({
+        file: null,
+        title: "",
+        date: new Date().toISOString().split("T")[0],
+        location: "",
+        photographer: "",
+        tags: "",
+      })
+      setIsAddPhotoDialogOpen(false)
+    } catch (e: any) {
+      setUploadError(e.message)
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -170,15 +202,15 @@ export default function PhotosPage() {
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <Input
-                  placeholder="Título de la foto"
-                  value={newPhoto.title}
-                  onChange={(e) => setNewPhoto({ ...newPhoto, title: e.target.value })}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setNewPhoto({ ...newPhoto, file: e.target.files ? e.target.files[0] : null })}
                   className="col-span-4 bg-slate-50 border-slate-200"
                 />
                 <Input
-                  placeholder="URL de la imagen (ej: /placeholder.svg)"
-                  value={newPhoto.url}
-                  onChange={(e) => setNewPhoto({ ...newPhoto, url: e.target.value })}
+                  placeholder="Título de la foto"
+                  value={newPhoto.title}
+                  onChange={(e) => setNewPhoto({ ...newPhoto, title: e.target.value })}
                   className="col-span-4 bg-slate-50 border-slate-200"
                 />
                 <Input
@@ -206,9 +238,21 @@ export default function PhotosPage() {
                   className="col-span-4 bg-slate-50 border-slate-200"
                 />
               </div>
+              {uploadError && <p className="text-red-500 text-sm text-center mb-4">{uploadError}</p>}
               <DialogFooter>
-                <Button onClick={handleAddPhoto} className="bg-purple-500 hover:bg-purple-600 text-white">
-                  Subir Foto
+                <Button
+                  onClick={handleAddPhoto}
+                  className="bg-purple-500 hover:bg-purple-600 text-white"
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Subiendo...
+                    </>
+                  ) : (
+                    "Subir Foto"
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -316,7 +360,7 @@ export default function PhotosPage() {
             <DialogContent className="max-w-4xl bg-white border-slate-200">
               <DialogHeader>
                 <DialogTitle className="text-slate-800">{selectedPhoto.title}</DialogTitle>
-                <DialogDescription className="text-slate-600">
+                <DialogDescription className="text-slate-600 flex flex-col sm:flex-row sm:items-center sm:gap-4 mt-2">
                   <span className="flex items-center gap-1">
                     <Calendar className="h-4 w-4" />
                     {new Date(selectedPhoto.date).toLocaleDateString("es-ES", {

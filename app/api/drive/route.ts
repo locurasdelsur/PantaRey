@@ -3,7 +3,10 @@ import { NextResponse } from "next/server"
 
 // Nuevas variables de entorno para la Cuenta de Servicio
 const SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\n/g, "\n") // Reemplaza \n por \n
+const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n") // Reemplaza \n por \n
+
+// ID de la carpeta principal donde se guardarán las sesiones de fotos
+const PARENT_FOLDER_ID = "1yH0gAupFxeQsPCllgECRAs_yhXlZBQ8Z"
 
 let drive: any
 
@@ -32,7 +35,7 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url)
-  const folderId = searchParams.get("folderId")
+  const folderId = searchParams.get("folderId") || PARENT_FOLDER_ID // Usar la carpeta principal si no se especifica
 
   if (!folderId) {
     return NextResponse.json({ error: "Se requiere el ID de la carpeta (folderId)." }, { status: 400 })
@@ -41,7 +44,7 @@ export async function GET(request: Request) {
   try {
     const res = await drive.files.list({
       q: `'${folderId}' in parents and trashed = false`,
-      fields: "files(id, name, mimeType, webContentLink)",
+      fields: "files(id, name, mimeType, webContentLink, webViewLink)", // Añadir webViewLink
       spaces: "drive",
     })
 
@@ -65,53 +68,81 @@ export async function POST(request: Request) {
   }
 
   try {
-    // En un entorno real, aquí procesarías el FormData para obtener el archivo.
-    // Por ejemplo, usando 'formidable' o 'busboy' en un entorno Node.js completo.
-    // Para este ejemplo, asumimos que el cliente enviaría un JSON con la URL y metadatos.
-    // O, si se envía un archivo real, se accedería a él a través de request.body como un ReadableStream.
-
     const formData = await request.formData()
-    const file = formData.get("file") as File | null // Esto sería el archivo real
+    const file = formData.get("file") as File | null
     const fileName = formData.get("fileName") as string
     const mimeType = formData.get("mimeType") as string
-    const folderId = formData.get("folderId") as string
+    const date = formData.get("date") as string // Fecha para la carpeta de sesión
+    const location = formData.get("location") as string
+    const photographer = formData.get("photographer") as string
+    const title = formData.get("title") as string
+    const tags = formData.get("tags") as string
 
-    if (!file || !fileName || !mimeType || !folderId) {
-      return NextResponse.json({ error: "Faltan datos para la subida del archivo." }, { status: 400 })
+    if (!file || !fileName || !mimeType || !date) {
+      return NextResponse.json({ error: "Faltan datos esenciales para la subida del archivo." }, { status: 400 })
     }
 
-    // Para una subida real, necesitarías convertir 'file' a un stream o buffer.
-    // Aquí, solo simulamos el proceso.
-    console.log(`Simulando subida de archivo: ${fileName} a la carpeta ${folderId}`)
+    // 1. Buscar o crear la carpeta de la sesión por fecha
+    const folderName = `Sesión de Fotos ${date}`
+    let sessionFolderId: string | undefined
 
-    // Ejemplo de cómo se haría una subida real (requiere un stream del archivo):
-    /*
+    // Buscar carpeta existente
+    const folderSearchRes = await drive.files.list({
+      q: `'${PARENT_FOLDER_ID}' in parents and name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id)",
+      spaces: "drive",
+    })
+
+    if (folderSearchRes.data.files && folderSearchRes.data.files.length > 0) {
+      sessionFolderId = folderSearchRes.data.files[0].id
+    } else {
+      // Crear nueva carpeta si no existe
+      const folderMetadata = {
+        name: folderName,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [PARENT_FOLDER_ID],
+      }
+      const folderCreateRes = await drive.files.create({
+        resource: folderMetadata,
+        fields: "id",
+      })
+      sessionFolderId = folderCreateRes.data.id
+    }
+
+    if (!sessionFolderId) {
+      throw new Error("No se pudo encontrar o crear la carpeta de la sesión.")
+    }
+
+    // 2. Subir el archivo a la carpeta de la sesión
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
     const media = {
       mimeType: mimeType,
-      body: file.stream(), // Esto asume que 'file' es un objeto File de un input
-    };
+      body: buffer,
+    }
 
     const fileMetadata = {
       name: fileName,
-      parents: [folderId],
-      // Puedes añadir propiedades personalizadas aquí si las necesitas
-      // appProperties: {
-      //   location: formData.get("location"),
-      //   date: formData.get("date"),
-      // },
-    };
+      parents: [sessionFolderId],
+      // Puedes añadir propiedades personalizadas si las necesitas
+      appProperties: {
+        location: location,
+        photographer: photographer,
+        title: title,
+        tags: tags,
+      },
+    }
 
     const uploadedFile = await drive.files.create({
       resource: fileMetadata,
       media: media,
-      fields: 'id, name, webContentLink',
-    });
-
-    return NextResponse.json({ message: "Archivo subido exitosamente", file: uploadedFile.data });
-    */
+      fields: "id, name, webContentLink, webViewLink", // Solicitar webViewLink
+    })
 
     return NextResponse.json({
-      message: "Subida simulada exitosamente. Implementa la lógica de subida real en el backend.",
+      message: "Archivo subido exitosamente",
+      file: uploadedFile.data,
     })
   } catch (error: any) {
     console.error("Error al subir archivo a Google Drive:", error.message)
